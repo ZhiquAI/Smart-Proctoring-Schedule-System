@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Upload, FileText, X, AlertCircle } from 'lucide-react';
+import { Upload, FileText, X, AlertCircle, CheckCircle } from 'lucide-react';
 import { processTeacherFile, processScheduleFile, FileProcessingResult } from '../utils/fileProcessing';
 import { Teacher, Schedule } from '../types';
 import Alert from './ui/Alert';
@@ -93,18 +93,19 @@ const FileUpload: React.FC<FileUploadProps> = ({ type, onDataLoaded, className =
   }, [onDataLoaded]);
 
   const inputId = `file-input-${type}`;
+  const hasData = uploadedFile && processingResult?.data.length > 0;
 
   return (
-    <div className={`space-y-3 ${className}`}>
+    <div className={`space-y-4 ${className}`}>
       {/* File Drop Zone */}
       <div
         className={`
-          relative border-2 border-dashed rounded-lg p-4 transition-all cursor-pointer
+          relative border-2 border-dashed rounded-xl p-6 transition-all duration-300 cursor-pointer group
           ${isDragOver 
-            ? 'border-blue-400 bg-blue-50' 
-            : uploadedFile 
-              ? 'border-green-400 bg-green-50' 
-              : 'border-gray-300 hover:border-gray-400'
+            ? 'border-blue-400 bg-blue-50 scale-105 shadow-lg' 
+            : hasData
+              ? 'border-green-400 bg-green-50 hover:bg-green-100' 
+              : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
           }
         `}
         onDrop={handleDrop}
@@ -122,18 +123,26 @@ const FileUpload: React.FC<FileUploadProps> = ({ type, onDataLoaded, className =
         />
 
         {isLoading ? (
-          <div className="flex items-center justify-center gap-3 py-2">
-            <LoadingSpinner size="sm" />
-            <span className="text-sm text-gray-600">处理中...</span>
+          <div className="flex items-center justify-center gap-3 py-4">
+            <LoadingSpinner size="md" />
+            <div className="text-center">
+              <p className="text-sm font-medium text-gray-700">处理中...</p>
+              <p className="text-xs text-gray-500 mt-1">正在解析文件内容</p>
+            </div>
           </div>
         ) : uploadedFile ? (
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <FileText className="w-5 h-5 text-green-600" />
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">{uploadedFile.name}</p>
+                <p className="text-sm font-semibold text-gray-900">{uploadedFile.name}</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  已成功加载 <span className="font-medium text-green-600">{processingResult?.data.length || 0}</span> 条记录
+                </p>
                 <p className="text-xs text-gray-500">
-                  {processingResult?.data.length || 0} 条记录
+                  文件大小: {(uploadedFile.size / 1024).toFixed(1)} KB
                 </p>
               </div>
             </div>
@@ -142,20 +151,35 @@ const FileUpload: React.FC<FileUploadProps> = ({ type, onDataLoaded, className =
                 e.stopPropagation();
                 handleRemove();
               }}
-              className="p-1 rounded-md hover:bg-red-100 text-red-500 transition-colors"
+              className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors group"
               title="移除文件"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5 group-hover:scale-110 transition-transform" />
             </button>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-2">
-            <Upload className="w-6 h-6 text-gray-400" />
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+              <Upload className="w-8 h-8 text-gray-400 group-hover:text-blue-500 transition-colors" />
+            </div>
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-900">
+              <p className="text-lg font-semibold text-gray-900 mb-1">
                 上传{currentConfig.label}
               </p>
-              <p className="text-xs text-gray-500">{currentConfig.description}</p>
+              <p className="text-sm text-gray-600 mb-2">{currentConfig.description}</p>
+              <p className="text-xs text-gray-500">
+                拖拽文件到此处或点击选择文件
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Drag Overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 bg-blue-500/10 border-2 border-blue-500 border-dashed rounded-xl flex items-center justify-center">
+            <div className="text-center">
+              <Upload className="w-12 h-12 text-blue-500 mx-auto mb-2" />
+              <p className="text-blue-700 font-medium">释放文件以上传</p>
             </div>
           </div>
         )}
@@ -163,7 +187,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ type, onDataLoaded, className =
 
       {/* Processing Results */}
       {processingResult && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {processingResult.errors.length > 0 && (
             <Alert
               type="error"

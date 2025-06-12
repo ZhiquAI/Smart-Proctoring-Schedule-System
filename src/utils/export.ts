@@ -1,117 +1,116 @@
 import * as XLSX from 'xlsx';
-import { Assignment } from '../types';
+import { Assignment, HistoricalStats } from '../types';
 
-interface PivotData {
-  locations: string[];
+export interface PivotData {
   timeSlots: {
     date: string;
     startTime: string;
     endTime: string;
     assignmentsByLocation: Record<string, string[]>;
   }[];
+  locations: string[];
 }
 
 export const transformAssignmentsToPivot = (assignments: Assignment[]): PivotData => {
-  const locations = new Set<string>();
-  const timeSlotsMap = new Map<string, {
+  const timeSlotMap = new Map<string, {
     date: string;
     startTime: string;
     endTime: string;
     assignmentsByLocation: Record<string, string[]>;
   }>();
 
+  const locationSet = new Set<string>();
+
   assignments.forEach(assignment => {
-    locations.add(assignment.location);
-    const timeSlotId = `${assignment.date}_${assignment.startTime}_${assignment.endTime}`;
+    const timeSlotKey = `${assignment.date}_${assignment.startTime}_${assignment.endTime}`;
     
-    if (!timeSlotsMap.has(timeSlotId)) {
-      timeSlotsMap.set(timeSlotId, {
+    if (!timeSlotMap.has(timeSlotKey)) {
+      timeSlotMap.set(timeSlotKey, {
         date: assignment.date,
         startTime: assignment.startTime,
         endTime: assignment.endTime,
         assignmentsByLocation: {}
       });
     }
+
+    const timeSlot = timeSlotMap.get(timeSlotKey)!;
     
-    const slot = timeSlotsMap.get(timeSlotId)!;
-    if (!slot.assignmentsByLocation[assignment.location]) {
-      slot.assignmentsByLocation[assignment.location] = [];
+    if (!timeSlot.assignmentsByLocation[assignment.location]) {
+      timeSlot.assignmentsByLocation[assignment.location] = [];
     }
-    slot.assignmentsByLocation[assignment.location].push(assignment.teacher);
+    
+    timeSlot.assignmentsByLocation[assignment.location].push(assignment.teacher);
+    locationSet.add(assignment.location);
   });
 
-  const sortedLocations = Array.from(locations).sort((a, b) => {
-    const numA = parseInt(a, 10);
-    const numB = parseInt(b, 10);
-    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-    return a.localeCompare(b);
-  });
-
-  const sortedTimeSlots = Array.from(timeSlotsMap.values()).sort((a, b) => 
+  const timeSlots = Array.from(timeSlotMap.values()).sort((a, b) => 
     new Date(`${a.date} ${a.startTime}`).getTime() - new Date(`${b.date} ${b.startTime}`).getTime()
   );
 
-  return { locations: sortedLocations, timeSlots: sortedTimeSlots };
+  const locations = Array.from(locationSet).sort((a, b) => a.localeCompare(b));
+
+  return { timeSlots, locations };
 };
 
-export const exportToExcel = (assignments: Assignment[], filename: string = '排班结果.xlsx') => {
-  if (!assignments || assignments.length === 0) {
-    throw new Error('没有可导出的数据');
-  }
-
-  const { locations, timeSlots } = transformAssignmentsToPivot(assignments);
-  const exportData: (string | number)[][] = [];
+export const exportToExcel = (assignments: Assignment[], filename: string) => {
+  const pivotData = transformAssignmentsToPivot(assignments);
   
-  // Headers
-  const headers = ['日期', '时间', ...locations];
-  exportData.push(headers);
+  const worksheetData: any[][] = [];
+  
+  // Header row
+  const headers = ['日期', '时间', ...pivotData.locations.map(loc => `考场 ${loc}`)];
+  worksheetData.push(headers);
 
   // Group by date for better organization
-  const groupedByDate = timeSlots.reduce((acc, slot) => {
+  const groupedByDate = pivotData.timeSlots.reduce((acc, slot) => {
     if (!acc[slot.date]) acc[slot.date] = [];
     acc[slot.date].push(slot);
     return acc;
-  }, {} as Record<string, typeof timeSlots>);
+  }, {} as Record<string, typeof pivotData.timeSlots>);
 
-  // Add data rows
   Object.keys(groupedByDate)
     .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
     .forEach(date => {
-      groupedByDate[date].forEach(slot => {
-        const row = [
-          date,
-          `${slot.startTime}-${slot.endTime}`,
-          ...locations.map(location => {
-            const teachers = slot.assignmentsByLocation[location] || [];
-            return teachers.join('、');
-          })
-        ];
-        exportData.push(row);
+      const slotsForDate = groupedByDate[date];
+      
+      slotsForDate.forEach((slot, index) => {
+        const row: any[] = [];
+        
+        // Date column (only for first slot of the date)
+        row.push(index === 0 ? slot.date : '');
+        
+        // Time column
+        row.push(`${slot.startTime} - ${slot.endTime}`);
+        
+        // Location columns
+        pivotData.locations.forEach(location => {
+          const teachers = slot.assignmentsByLocation[location] || [];
+          row.push(teachers.join('\n'));
+        });
+        
+        worksheetData.push(row);
       });
     });
 
-  // Create workbook and worksheet
-  const ws = XLSX.utils.aoa_to_sheet(exportData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '排班结果');
-
+  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  
   // Set column widths
   const colWidths = [
-    { wch: 12 }, // 日期
-    { wch: 15 }, // 时间
-    ...locations.map(() => ({ wch: 15 })) // 考场
+    { wch: 12 }, // Date
+    { wch: 15 }, // Time
+    ...pivotData.locations.map(() => ({ wch: 20 })) // Locations
   ];
-  ws['!cols'] = colWidths;
+  worksheet['!cols'] = colWidths;
 
-  // Download file
-  XLSX.writeFile(wb, filename);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, '监考安排');
+  
+  XLSX.writeFile(workbook, filename);
 };
 
-export const exportHistoricalStats = (stats: Record<string, { count: number; duration: number }>, filename: string = '历史统计.json') => {
-  const dataStr = JSON.stringify(stats, null, 2);
-  const blob = new Blob([dataStr], { type: 'application/json' });
+export const exportHistoricalStats = (stats: HistoricalStats, filename: string) => {
+  const blob = new Blob([JSON.stringify(stats, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

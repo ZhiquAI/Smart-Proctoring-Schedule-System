@@ -1,7 +1,6 @@
-import React, { useState, useCallback } from 'react';
-import { Calendar, Download, AlertTriangle, CheckCircle, Wand2, FileText, Printer } from 'lucide-react';
+import React, { useState, useCallback, useMemo } from 'react';
+import { Calendar, Download, AlertTriangle, CheckCircle, Wand2, FileText, Printer, RotateCcw, Settings, BarChart3 } from 'lucide-react';
 import { useScheduling } from './hooks/useScheduling';
-import { processTeacherFile, processScheduleFile } from './utils/fileProcessing';
 import { exportToExcel, exportHistoricalStats } from './utils/export';
 import FileUpload from './components/FileUpload';
 import ScheduleTable from './components/ScheduleTable';
@@ -9,7 +8,10 @@ import StatisticsPanel from './components/StatisticsPanel';
 import RulesPanel from './components/RulesPanel';
 import Modal from './components/ui/Modal';
 import Alert from './components/ui/Alert';
-import LoadingSpinner from './components/ui/LoadingSpinner';
+import Card from './components/ui/Card';
+import StepIndicator, { defaultSteps } from './components/ui/StepIndicator';
+import ConfirmModal from './components/ui/ConfirmModal';
+import ProgressModal from './components/ui/ProgressModal';
 import { Teacher, Schedule, HistoricalStats, Session, Slot } from './types';
 
 function App() {
@@ -22,6 +24,7 @@ function App() {
     teacherExclusions,
     historicalStats,
     isLoading,
+    progress,
     validationIssues,
     setTeachers,
     setSchedules,
@@ -32,17 +35,27 @@ function App() {
     swapAssignments,
     getConflicts,
     addTeacherExclusion,
-    removeTeacherExclusion
+    removeTeacherExclusion,
+    resetAllData
   } = useScheduling();
 
   const [alertMessage, setAlertMessage] = useState<{ type: 'success' | 'error' | 'warning'; title: string; message: string } | null>(null);
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [printTeacher, setPrintTeacher] = useState<string>('');
 
   const showAlert = useCallback((type: 'success' | 'error' | 'warning', title: string, message: string) => {
     setAlertMessage({ type, title, message });
   }, []);
+
+  // Calculate current step
+  const currentStep = useMemo(() => {
+    if (assignments.length > 0) return 4; // Completed
+    if (teachers.length > 0 && schedules.length > 0) return 3; // Ready to generate
+    if (teachers.length > 0 || schedules.length > 0) return 2; // Partial data uploaded
+    return 1; // Initial state
+  }, [teachers.length, schedules.length, assignments.length]);
 
   const groupScheduleIntoSessions = useCallback((scheduleData: Schedule[]) => {
     const sessionMap = new Map<string, Session>();
@@ -173,23 +186,35 @@ function App() {
     setShowPrintModal(true);
   }, []);
 
+  const handleReset = useCallback(() => {
+    resetAllData();
+    showAlert('success', '成功', '所有数据已重置');
+  }, [resetAllData, showAlert]);
+
   const conflicts = getConflicts();
   const canGenerate = teachers.length > 0 && schedules.length > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
-      <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto p-6 lg:p-8">
         {/* Header */}
         <header className="text-center mb-8">
-          <div className="flex justify-center items-center gap-3 mb-2">
-            <Calendar className="w-8 h-8 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-800">智能监考排班系统</h1>
-            <span className="text-xs font-semibold bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
+          <div className="flex justify-center items-center gap-3 mb-4">
+            <Calendar className="w-10 h-10 text-blue-600" />
+            <h1 className="text-4xl font-bold text-gray-800">智能监考排班系统</h1>
+            <span className="text-sm font-semibold bg-gradient-to-r from-blue-500 to-purple-600 text-white px-3 py-1 rounded-full">
               V2.0
             </span>
           </div>
-          <p className="text-gray-600">基于智能算法的自动化排班解决方案</p>
+          <p className="text-gray-600 text-lg">基于智能算法的自动化排班解决方案</p>
         </header>
+
+        {/* Step Indicator */}
+        <div className="mb-8">
+          <Card className="bg-white/90">
+            <StepIndicator currentStep={currentStep} steps={defaultSteps} />
+          </Card>
+        </div>
 
         {/* Alert Messages */}
         {alertMessage && (
@@ -215,86 +240,70 @@ function App() {
         )}
 
         {/* Main Content */}
-        <div className="grid grid-cols-12 gap-6">
+        <div className="grid grid-cols-12 gap-8">
           {/* Left Panel - Settings */}
-          <div className="col-span-12 lg:col-span-3">
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-white/40 shadow-lg">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  排班设置
-                </h2>
+          <div className="col-span-12 lg:col-span-3 space-y-6">
+            {/* File Upload Card */}
+            <Card 
+              title="数据导入" 
+              icon={<FileText className="w-5 h-5 text-blue-600" />}
+              className="h-fit"
+            >
+              <div className="space-y-6">
+                <FileUpload type="teacher" onDataLoaded={handleTeacherData} />
+                <FileUpload type="schedule" onDataLoaded={handleScheduleData} />
               </div>
-              
-              <div className="p-4 space-y-6">
-                {/* Step 1: File Upload */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                    <h3 className="font-semibold text-gray-700">数据导入</h3>
-                  </div>
-                  <div className="space-y-3">
-                    <FileUpload type="teacher" onDataLoaded={handleTeacherData} />
-                    <FileUpload type="schedule" onDataLoaded={handleScheduleData} />
-                  </div>
-                </div>
+            </Card>
 
-                {/* Step 2: Rules Configuration */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                    <h3 className="font-semibold text-gray-700">规则配置</h3>
-                  </div>
-                  <RulesPanel
-                    teachers={teachers}
-                    sessions={sessions}
-                    specialTasks={specialTasks}
-                    teacherExclusions={teacherExclusions}
-                    onUpdateSpecialTasks={setSpecialTasks}
-                    onAddExclusion={addTeacherExclusion}
-                    onRemoveExclusion={removeTeacherExclusion}
-                  />
-                </div>
+            {/* Rules Configuration Card */}
+            <Card 
+              title="规则配置" 
+              icon={<Settings className="w-5 h-5 text-green-600" />}
+              className="h-fit"
+            >
+              <RulesPanel
+                teachers={teachers}
+                sessions={sessions}
+                specialTasks={specialTasks}
+                teacherExclusions={teacherExclusions}
+                onUpdateSpecialTasks={setSpecialTasks}
+                onAddExclusion={addTeacherExclusion}
+                onRemoveExclusion={removeTeacherExclusion}
+              />
+            </Card>
 
-                {/* Step 3: Generate */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                    <h3 className="font-semibold text-gray-700">智能分配</h3>
-                  </div>
-                  <button
-                    onClick={handleGenerateAssignments}
-                    disabled={!canGenerate || isLoading}
-                    className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2"
-                  >
-                    {isLoading ? (
-                      <>
-                        <LoadingSpinner size="sm\" className="text-white" />
-                        <span>分配中...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 className="w-5 h-5" />
-                        <span>开始分配</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+            {/* Action Buttons */}
+            <div className="space-y-4">
+              <button
+                onClick={handleGenerateAssignments}
+                disabled={!canGenerate || isLoading}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-3 text-lg"
+              >
+                <Wand2 className="w-6 h-6" />
+                <span>{isLoading ? '分配中...' : '开始智能分配'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowResetModal(true)}
+                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="w-5 h-5" />
+                <span>重置所有数据</span>
+              </button>
             </div>
           </div>
 
           {/* Center Panel - Schedule Preview */}
           <div className="col-span-12 lg:col-span-6">
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-white/40 shadow-lg h-[80vh] flex flex-col">
-              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <Calendar className="w-5 h-5" />
-                  排班预览
-                </h2>
-                
+            <Card 
+              title="排班预览" 
+              icon={<Calendar className="w-5 h-5 text-purple-600" />}
+              className="h-[80vh] flex flex-col"
+              padding="sm"
+            >
+              <div className="flex items-center justify-between mb-4 px-4">
                 {assignments.length > 0 && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <button
                       onClick={handleShowConflicts}
                       className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
@@ -321,32 +330,30 @@ function App() {
                       className="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
                     >
                       <Download className="w-4 h-4" />
-                      导出
+                      导出Excel
                     </button>
                   </div>
                 )}
               </div>
               
-              <div className="flex-1 overflow-hidden p-4">
+              <div className="flex-1 overflow-hidden px-4 pb-4">
                 <ScheduleTable
                   assignments={assignments}
                   onSwapAssignments={swapAssignments}
                   className="h-full"
                 />
               </div>
-            </div>
+            </Card>
           </div>
 
           {/* Right Panel - Statistics */}
           <div className="col-span-12 lg:col-span-3">
-            <div className="bg-white/70 backdrop-blur-sm rounded-xl border border-white/40 shadow-lg h-[80vh] flex flex-col">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <Printer className="w-5 h-5" />
-                  数据统计
-                </h2>
-              </div>
-              
+            <Card 
+              title="数据统计" 
+              icon={<BarChart3 className="w-5 h-5 text-orange-600" />}
+              className="h-[80vh] flex flex-col"
+              padding="sm"
+            >
               <div className="flex-1 overflow-hidden p-4">
                 <StatisticsPanel
                   assignments={assignments}
@@ -359,12 +366,30 @@ function App() {
                   className="h-full"
                 />
               </div>
-            </div>
+            </Card>
           </div>
         </div>
       </div>
 
-      {/* Conflict Modal */}
+      {/* Modals */}
+      <ConfirmModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        onConfirm={handleReset}
+        title="确认重置"
+        message="此操作将清空所有已导入的数据和生成的排班结果，且无法撤销。\n\n您确定要继续吗？"
+        confirmText="确认重置"
+        cancelText="取消"
+        type="danger"
+      />
+
+      <ProgressModal
+        isOpen={isLoading}
+        progress={progress.progress}
+        message={progress.message}
+        title="智能排班中"
+      />
+
       <Modal
         isOpen={showConflictModal}
         onClose={() => setShowConflictModal(false)}
@@ -411,7 +436,6 @@ function App() {
         </div>
       </Modal>
 
-      {/* Print Modal */}
       <Modal
         isOpen={showPrintModal}
         onClose={() => setShowPrintModal(false)}
@@ -454,8 +478,9 @@ function App() {
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   onClick={() => window.print()}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
                 >
+                  <Printer className="w-4 h-4" />
                   打印
                 </button>
                 <button
@@ -469,14 +494,6 @@ function App() {
           )}
         </div>
       </Modal>
-
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div className="fixed inset-0 bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center z-50">
-          <LoadingSpinner size="lg" className="mb-4" />
-          <p className="text-gray-600 font-medium">正在为您智能计算，请稍候...</p>
-        </div>
-      )}
     </div>
   );
 }

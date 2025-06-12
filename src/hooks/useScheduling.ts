@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react';
 import { Teacher, Schedule, Assignment, SpecialTask, HistoricalStats, Session, ValidationIssue, Conflict } from '../types';
-import { generateOptimalAssignments } from '../utils/schedulingAlgorithm';
 import { validateSchedulingData } from '../utils/validation';
 import { detectConflicts } from '../utils/conflictDetection';
+import { useSchedulingWorker } from './useSchedulingWorker';
 
 export const useScheduling = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -15,11 +15,11 @@ export const useScheduling = () => {
   });
   const [teacherExclusions, setTeacherExclusions] = useState<Map<string, Set<string>>>(new Map());
   const [historicalStats, setHistoricalStats] = useState<HistoricalStats>({});
-  const [isLoading, setIsLoading] = useState(false);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
 
+  const { generateAssignments: workerGenerateAssignments, isLoading, progress } = useSchedulingWorker();
+
   const generateAssignments = useCallback(async () => {
-    setIsLoading(true);
     try {
       // Validate data first
       const issues = validateSchedulingData(teachers, schedules, specialTasks, teacherExclusions);
@@ -29,8 +29,8 @@ export const useScheduling = () => {
         throw new Error('存在阻止生成的错误，请先修复');
       }
 
-      // Generate assignments
-      const newAssignments = await generateOptimalAssignments({
+      // Generate assignments using worker
+      const newAssignments = await workerGenerateAssignments({
         teachers,
         schedules,
         sessions,
@@ -44,10 +44,8 @@ export const useScheduling = () => {
     } catch (error) {
       console.error('生成排班失败:', error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
-  }, [teachers, schedules, sessions, specialTasks, teacherExclusions, historicalStats]);
+  }, [teachers, schedules, sessions, specialTasks, teacherExclusions, historicalStats, workerGenerateAssignments]);
 
   const updateAssignment = useCallback((assignmentId: string, newTeacher: string) => {
     setAssignments(prev => prev.map(assignment => 
@@ -60,8 +58,17 @@ export const useScheduling = () => {
   const swapAssignments = useCallback((id1: string, id2: string) => {
     setAssignments(prev => {
       const newAssignments = [...prev];
-      const index1 = newAssignments.findIndex(a => a.id === id1);
-      const index2 = newAssignments.findIndex(a => a.id === id2);
+      
+      // Find assignments by matching the pattern in the ID
+      const findAssignmentIndex = (targetId: string) => {
+        return newAssignments.findIndex((assignment, index) => {
+          const generatedId = `${assignment.date}_${assignment.startTime}_${assignment.endTime}_${assignment.location}_${index}`;
+          return generatedId === targetId || assignment.id === targetId;
+        });
+      };
+
+      const index1 = findAssignmentIndex(id1);
+      const index2 = findAssignmentIndex(id2);
       
       if (index1 !== -1 && index2 !== -1) {
         const temp = newAssignments[index1].teacher;
@@ -115,6 +122,16 @@ export const useScheduling = () => {
     });
   }, []);
 
+  const resetAllData = useCallback(() => {
+    setTeachers([]);
+    setSchedules([]);
+    setSessions([]);
+    setAssignments([]);
+    setSpecialTasks({ designated: [], forced: [] });
+    setTeacherExclusions(new Map());
+    setValidationIssues([]);
+  }, []);
+
   return {
     // State
     teachers,
@@ -125,6 +142,7 @@ export const useScheduling = () => {
     teacherExclusions,
     historicalStats,
     isLoading,
+    progress,
     validationIssues,
     
     // Setters
@@ -140,6 +158,7 @@ export const useScheduling = () => {
     swapAssignments,
     getConflicts,
     addTeacherExclusion,
-    removeTeacherExclusion
+    removeTeacherExclusion,
+    resetAllData
   };
 };
