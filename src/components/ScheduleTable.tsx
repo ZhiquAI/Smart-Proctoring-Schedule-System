@@ -11,14 +11,20 @@ interface ScheduleTableProps {
   className?: string;
 }
 
+interface DragItem {
+  id: string;
+  teacher: string;
+  assignmentIndex: number;
+}
+
 const DraggableTeacher: React.FC<{
   teacher: string;
-  assignmentId: string;
-  onDrop: (sourceId: string, targetId: string) => void;
-}> = ({ teacher, assignmentId, onDrop }) => {
+  assignmentIndex: number;
+  onDrop: (sourceIndex: number, targetIndex: number) => void;
+}> = ({ teacher, assignmentIndex, onDrop }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'teacher',
-    item: { id: assignmentId, teacher },
+    item: { id: `assignment_${assignmentIndex}`, teacher, assignmentIndex },
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
@@ -26,9 +32,9 @@ const DraggableTeacher: React.FC<{
 
   const [{ isOver, canDrop }, drop] = useDrop({
     accept: 'teacher',
-    drop: (item: { id: string; teacher: string }) => {
-      if (item.id !== assignmentId) {
-        onDrop(item.id, assignmentId);
+    drop: (item: DragItem) => {
+      if (item.assignmentIndex !== assignmentIndex) {
+        onDrop(item.assignmentIndex, assignmentIndex);
       }
     },
     collect: (monitor) => ({
@@ -41,13 +47,18 @@ const DraggableTeacher: React.FC<{
 
   return (
     <div
-      ref={(node) => drag(drop(node))}
+      ref={(node) => {
+        if (!isError) {
+          drag(drop(node));
+        }
+      }}
       className={`
-        group relative px-3 py-2 text-xs rounded-lg border transition-all duration-200 cursor-move
+        group relative px-3 py-2 text-xs rounded-lg border transition-all duration-200
+        ${isError ? 'cursor-not-allowed' : 'cursor-move'}
         ${isDragging ? 'opacity-50 scale-95 rotate-2 z-50' : ''}
         ${isOver && canDrop ? 'ring-2 ring-blue-400 ring-opacity-75 scale-105' : ''}
         ${isError 
-          ? 'bg-red-100 border-red-300 text-red-700 font-bold cursor-not-allowed' 
+          ? 'bg-red-100 border-red-300 text-red-700 font-bold' 
           : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md hover:bg-blue-50'
         }
       `}
@@ -102,8 +113,20 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
     }, {} as Record<string, typeof pivotData.timeSlots>);
   }, [pivotData.timeSlots]);
 
-  const handleSwap = (sourceId: string, targetId: string) => {
-    onSwapAssignments(sourceId, targetId);
+  const handleSwap = (sourceIndex: number, targetIndex: number) => {
+    // Use the actual assignment indices to swap
+    if (sourceIndex >= 0 && targetIndex >= 0 && sourceIndex < assignments.length && targetIndex < assignments.length) {
+      const sourceAssignment = assignments[sourceIndex];
+      const targetAssignment = assignments[targetIndex];
+      
+      if (sourceAssignment && targetAssignment) {
+        // Create unique IDs for the swap operation
+        const sourceId = `${sourceAssignment.date}_${sourceAssignment.startTime}_${sourceAssignment.endTime}_${sourceAssignment.location}_${sourceIndex}`;
+        const targetId = `${targetAssignment.date}_${targetAssignment.startTime}_${targetAssignment.endTime}_${targetAssignment.location}_${targetIndex}`;
+        
+        onSwapAssignments(sourceId, targetId);
+      }
+    }
   };
 
   if (assignments.length === 0) {
@@ -168,7 +191,6 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
                     </td>
                     {sortedLocations.map(location => {
                       const teachersInSlot = slot.assignmentsByLocation[location] || [];
-                      const slotId = `${slot.date}_${slot.startTime}_${slot.endTime}_${location}`;
                       
                       return (
                         <td 
@@ -178,12 +200,20 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
                           <div className="space-y-2 min-h-[60px]">
                             {teachersInSlot.length > 0 ? (
                               teachersInSlot.map((teacher, teacherIndex) => {
-                                const assignmentId = `${slotId}_${teacherIndex}`;
+                                // Find the actual assignment index in the original assignments array
+                                const assignmentIndex = assignments.findIndex(a => 
+                                  a.date === slot.date &&
+                                  a.startTime === slot.startTime &&
+                                  a.endTime === slot.endTime &&
+                                  a.location === location &&
+                                  a.teacher === teacher
+                                );
+                                
                                 return (
                                   <DraggableTeacher
-                                    key={assignmentId}
+                                    key={`${slot.date}_${slot.startTime}_${slot.endTime}_${location}_${teacherIndex}`}
                                     teacher={teacher}
-                                    assignmentId={assignmentId}
+                                    assignmentIndex={assignmentIndex}
                                     onDrop={handleSwap}
                                   />
                                 );

@@ -59,18 +59,18 @@ export const useScheduling = () => {
     setAssignments(prev => {
       const newAssignments = [...prev];
       
-      // Find assignments by matching the pattern in the ID
-      const findAssignmentIndex = (targetId: string) => {
-        return newAssignments.findIndex((assignment, index) => {
-          const generatedId = `${assignment.date}_${assignment.startTime}_${assignment.endTime}_${assignment.location}_${index}`;
-          return generatedId === targetId || assignment.id === targetId;
-        });
+      // Extract indices from the IDs
+      const getIndexFromId = (id: string) => {
+        const parts = id.split('_');
+        const lastPart = parts[parts.length - 1];
+        return parseInt(lastPart);
       };
 
-      const index1 = findAssignmentIndex(id1);
-      const index2 = findAssignmentIndex(id2);
+      const index1 = getIndexFromId(id1);
+      const index2 = getIndexFromId(id2);
       
-      if (index1 !== -1 && index2 !== -1) {
+      if (index1 >= 0 && index2 >= 0 && index1 < newAssignments.length && index2 < newAssignments.length) {
+        // Swap the teachers
         const temp = newAssignments[index1].teacher;
         newAssignments[index1] = { 
           ...newAssignments[index1], 
