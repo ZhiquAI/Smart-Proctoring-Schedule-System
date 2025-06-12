@@ -1,25 +1,30 @@
-import express from 'express';
-import AIService from '../services/aiService';
-import { AIRequest } from '../types';
+import { Router } from 'express';
+import { aiService } from '../services/aiService';
 
-const router = express.Router();
-const aiService = new AIService();
+const router = Router();
 
 router.post('/chat', async (req, res) => {
   try {
-    const { messages, context }: AIRequest = req.body;
+    const { messages, context } = req.body;
 
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'Messages array is required' });
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid messages format'
+      });
     }
 
-    const response = await aiService.processRequest(messages, context);
-    res.json(response);
+    const result = await aiService.getResponse(messages, context || {});
+
+    res.json({
+      success: true,
+      data: result
+    });
   } catch (error) {
-    console.error('AI Chat Error:', error);
-    res.status(500).json({ 
-      error: 'AI service error',
-      message: error instanceof Error ? error.message : 'Unknown error'
+    console.error('AI route error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
     });
   }
 });
