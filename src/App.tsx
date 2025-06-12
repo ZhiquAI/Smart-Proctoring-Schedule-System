@@ -226,8 +226,8 @@ function App() {
         {/* Main Content */}
         <div className="grid grid-cols-12 gap-8">
           {/* Left Panel - Settings */}
-          <div className="col-span-12 lg:col-span-3 space-y-4">
-            {/* File Upload Card - Compressed */}
+          <div className="col-span-12 lg:col-span-3 flex flex-col h-[80vh]">
+            {/* File Upload Card - Compact */}
             <Card 
               title={
                 <div className="flex items-center gap-2">
@@ -236,16 +236,16 @@ function App() {
                   <span>数据导入</span>
                 </div>
               }
-              className="h-fit"
+              className="mb-4"
               padding="sm"
             >
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <FileUpload type="teacher" onDataLoaded={handleTeacherData} />
                 <FileUpload type="schedule" onDataLoaded={handleScheduleData} />
               </div>
             </Card>
 
-            {/* Rules Configuration Card - Compressed */}
+            {/* Rules Configuration Card - Flexible Height */}
             <Card 
               title={
                 <div className="flex items-center gap-2">
@@ -254,10 +254,10 @@ function App() {
                   <span>规则配置</span>
                 </div>
               }
-              className="flex-1"
+              className="flex-1 mb-4 flex flex-col"
               padding="sm"
             >
-              <div className="max-h-[calc(80vh-280px)] overflow-y-auto">
+              <div className="flex-1 overflow-y-auto">
                 <RulesPanel
                   teachers={teachers}
                   sessions={sessions}
@@ -270,12 +270,12 @@ function App() {
               </div>
             </Card>
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Fixed at Bottom */}
             <div className="space-y-3">
               <button
                 onClick={handleGenerateAssignments}
                 disabled={!canGenerate || isLoading}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-3"
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-3"
               >
                 <div className="w-6 h-6 bg-white/20 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
                 <Wand2 className="w-5 h-5" />
@@ -284,7 +284,7 @@ function App() {
 
               <button
                 onClick={() => setShowResetModal(true)}
-                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
+                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>重置所有数据</span>
@@ -296,50 +296,50 @@ function App() {
           <div className="col-span-12 lg:col-span-6">
             <Card 
               title={
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-purple-600" />
-                  <span>排班预览</span>
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-purple-600" />
+                    <span>排班预览</span>
+                  </div>
+                  
+                  {assignments.length > 0 && (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleShowConflicts}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
+                          conflicts.length === 0
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}
+                      >
+                        {conflicts.length === 0 ? (
+                          <>
+                            <CheckCircle className="w-4 h-4" />
+                            无冲突
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-4 h-4" />
+                            {conflicts.length} 条冲突
+                          </>
+                        )}
+                      </button>
+                      
+                      <button
+                        onClick={handleExportExcel}
+                        className="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        导出Excel
+                      </button>
+                    </div>
+                  )}
                 </div>
               }
               className="h-[80vh] flex flex-col"
               padding="sm"
             >
-              <div className="flex items-center justify-between mb-4 px-4">
-                {assignments.length > 0 && (
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={handleShowConflicts}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
-                        conflicts.length === 0
-                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                          : 'bg-red-100 text-red-700 hover:bg-red-200'
-                      }`}
-                    >
-                      {conflicts.length === 0 ? (
-                        <>
-                          <CheckCircle className="w-4 h-4" />
-                          无冲突
-                        </>
-                      ) : (
-                        <>
-                          <AlertTriangle className="w-4 h-4" />
-                          {conflicts.length} 条冲突
-                        </>
-                      )}
-                    </button>
-                    
-                    <button
-                      onClick={handleExportExcel}
-                      className="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                    >
-                      <Download className="w-4 h-4" />
-                      导出Excel
-                    </button>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex-1 overflow-hidden px-4 pb-4">
+              <div className="flex-1 overflow-hidden">
                 <ScheduleTable
                   assignments={assignments}
                   onSwapAssignments={swapAssignments}
@@ -361,7 +361,7 @@ function App() {
               className="h-[80vh] flex flex-col"
               padding="sm"
             >
-              <div className="flex-1 overflow-hidden p-4">
+              <div className="flex-1 overflow-hidden">
                 <StatisticsPanel
                   assignments={assignments}
                   teachers={teachers}

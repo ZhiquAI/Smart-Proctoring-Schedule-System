@@ -3,7 +3,7 @@ import React from 'react';
 interface CardProps {
   children: React.ReactNode;
   className?: string;
-  title?: string;
+  title?: React.ReactNode;
   icon?: React.ReactNode;
   padding?: 'sm' | 'md' | 'lg';
 }
