@@ -242,52 +242,56 @@ function App() {
         {/* Main Content */}
         <div className="grid grid-cols-12 gap-8">
           {/* Left Panel - Settings */}
-          <div className="col-span-12 lg:col-span-3 space-y-6">
-            {/* File Upload Card */}
+          <div className="col-span-12 lg:col-span-3 space-y-4">
+            {/* File Upload Card - Compressed */}
             <Card 
               title="数据导入" 
               icon={<FileText className="w-5 h-5 text-blue-600" />}
               className="h-fit"
+              padding="sm"
             >
-              <div className="space-y-6">
+              <div className="space-y-3">
                 <FileUpload type="teacher" onDataLoaded={handleTeacherData} />
                 <FileUpload type="schedule" onDataLoaded={handleScheduleData} />
               </div>
             </Card>
 
-            {/* Rules Configuration Card */}
+            {/* Rules Configuration Card - Compressed */}
             <Card 
               title="规则配置" 
               icon={<Settings className="w-5 h-5 text-green-600" />}
-              className="h-fit"
+              className="flex-1"
+              padding="sm"
             >
-              <RulesPanel
-                teachers={teachers}
-                sessions={sessions}
-                specialTasks={specialTasks}
-                teacherExclusions={teacherExclusions}
-                onUpdateSpecialTasks={setSpecialTasks}
-                onAddExclusion={addTeacherExclusion}
-                onRemoveExclusion={removeTeacherExclusion}
-              />
+              <div className="max-h-[calc(80vh-280px)] overflow-y-auto">
+                <RulesPanel
+                  teachers={teachers}
+                  sessions={sessions}
+                  specialTasks={specialTasks}
+                  teacherExclusions={teacherExclusions}
+                  onUpdateSpecialTasks={setSpecialTasks}
+                  onAddExclusion={addTeacherExclusion}
+                  onRemoveExclusion={removeTeacherExclusion}
+                />
+              </div>
             </Card>
 
             {/* Action Buttons */}
-            <div className="space-y-4">
+            <div className="space-y-3">
               <button
                 onClick={handleGenerateAssignments}
                 disabled={!canGenerate || isLoading}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-3 text-lg"
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-3"
               >
-                <Wand2 className="w-6 h-6" />
+                <Wand2 className="w-5 h-5" />
                 <span>{isLoading ? '分配中...' : '开始智能分配'}</span>
               </button>
 
               <button
                 onClick={() => setShowResetModal(true)}
-                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
+                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
               >
-                <RotateCcw className="w-5 h-5" />
+                <RotateCcw className="w-4 h-4" />
                 <span>重置所有数据</span>
               </button>
             </div>
