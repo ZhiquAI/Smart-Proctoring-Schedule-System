@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useDrag, useDrop, DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { Move } from 'lucide-react';
 import { Assignment } from '../types';
 import { transformAssignmentsToPivot } from '../utils/export';
 
@@ -23,7 +24,7 @@ const DraggableTeacher: React.FC<{
     }),
   });
 
-  const [{ isOver }, drop] = useDrop({
+  const [{ isOver, canDrop }, drop] = useDrop({
     accept: 'teacher',
     drop: (item: { id: string; teacher: string }) => {
       if (item.id !== assignmentId) {
@@ -32,6 +33,7 @@ const DraggableTeacher: React.FC<{
     },
     collect: (monitor) => ({
       isOver: monitor.isOver(),
+      canDrop: monitor.canDrop(),
     }),
   });
 
@@ -41,17 +43,27 @@ const DraggableTeacher: React.FC<{
     <div
       ref={(node) => drag(drop(node))}
       className={`
-        px-2 py-1 text-xs rounded border cursor-move transition-all
-        ${isDragging ? 'opacity-50 scale-95' : ''}
-        ${isOver ? 'ring-2 ring-blue-400' : ''}
+        group relative px-3 py-2 text-xs rounded-lg border transition-all duration-200 cursor-move
+        ${isDragging ? 'opacity-50 scale-95 rotate-2 z-50' : ''}
+        ${isOver && canDrop ? 'ring-2 ring-blue-400 ring-opacity-75 scale-105' : ''}
         ${isError 
-          ? 'bg-red-100 border-red-300 text-red-700 font-bold' 
-          : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
+          ? 'bg-red-100 border-red-300 text-red-700 font-bold cursor-not-allowed' 
+          : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md hover:bg-blue-50'
         }
       `}
-      title={isError ? '' : '拖拽以重新分配'}
+      title={isError ? '分配错误，无法拖拽' : '拖拽以重新分配'}
     >
-      {teacher}
+      <div className="flex items-center gap-1">
+        {!isError && (
+          <Move className="w-3 h-3 text-gray-400 group-hover:text-blue-500 transition-colors" />
+        )}
+        <span className="font-medium">{teacher}</span>
+      </div>
+      
+      {/* Drag indicator */}
+      {!isError && (
+        <div className="absolute inset-0 bg-blue-500 opacity-0 group-hover:opacity-10 rounded-lg transition-opacity pointer-events-none" />
+      )}
     </div>
   );
 };
@@ -65,6 +77,22 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
     transformAssignmentsToPivot(assignments), 
     [assignments]
   );
+
+  // Sort locations numerically for better order
+  const sortedLocations = useMemo(() => {
+    return pivotData.locations.sort((a, b) => {
+      const numA = parseInt(a) || 0;
+      const numB = parseInt(b) || 0;
+      
+      // If both are numbers, sort numerically
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+      
+      // Otherwise, sort alphabetically
+      return a.localeCompare(b, 'zh-CN', { numeric: true });
+    });
+  }, [pivotData.locations]);
 
   const groupedByDate = useMemo(() => {
     return pivotData.timeSlots.reduce((acc, slot) => {
@@ -80,7 +108,7 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
 
   if (assignments.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="flex flex-col items-center justify-center py-20 text-center h-full">
         <div className="text-6xl mb-4">📊</div>
         <h3 className="text-xl font-semibold text-gray-500 mb-2">等待生成排班结果...</h3>
         <p className="text-gray-400">请先在左侧完成设置并点击"开始分配"</p>
@@ -93,19 +121,24 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
       <div className={`overflow-auto ${className}`}>
         <table className="min-w-full text-sm border-collapse bg-white rounded-lg overflow-hidden shadow-sm">
           <thead>
-            <tr className="bg-gray-100">
-              <th className="p-3 text-xs font-semibold text-center text-gray-600 border w-20 sticky top-0 bg-gray-100 z-10">
+            <tr className="bg-gradient-to-r from-gray-100 to-gray-50">
+              <th className="p-4 text-xs font-bold text-center text-gray-700 border border-gray-200 w-24 sticky top-0 bg-gray-100 z-10">
                 日期
               </th>
-              <th className="p-3 text-xs font-semibold text-center text-gray-600 border w-24 sticky top-0 bg-gray-100 z-10">
-                时间
+              <th className="p-4 text-xs font-bold text-center text-gray-700 border border-gray-200 w-32 sticky top-0 bg-gray-100 z-10">
+                时间段
               </th>
-              {pivotData.locations.map(location => (
+              {sortedLocations.map(location => (
                 <th 
                   key={location}
-                  className="p-3 text-xs font-semibold text-center text-gray-600 border min-w-[120px] sticky top-0 bg-gray-100 z-10"
+                  className="p-4 text-xs font-bold text-center text-gray-700 border border-gray-200 min-w-[140px] sticky top-0 bg-gray-100 z-10"
                 >
-                  考场 {location}
+                  <div className="flex items-center justify-center gap-1">
+                    <span>考场</span>
+                    <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-mono">
+                      {location}
+                    </span>
+                  </div>
                 </th>
               ))}
             </tr>
@@ -117,39 +150,49 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
                 const slotsForDate = groupedByDate[date];
                 
                 return slotsForDate.map((slot, index) => (
-                  <tr key={`${slot.date}_${slot.startTime}_${slot.endTime}`} className="hover:bg-gray-50">
+                  <tr key={`${slot.date}_${slot.startTime}_${slot.endTime}`} className="hover:bg-blue-50/50 transition-colors">
                     {index === 0 && (
                       <td 
-                        className="p-3 text-sm text-center align-middle text-gray-700 font-medium border bg-gray-50"
+                        className="p-4 text-sm text-center align-middle text-gray-800 font-bold border border-gray-200 bg-gradient-to-r from-blue-50 to-blue-25"
                         rowSpan={slotsForDate.length}
                       >
-                        {slot.date.substring(5).replace(/\//g, '-')}
+                        <div className="writing-mode-vertical">
+                          {slot.date.substring(5).replace(/\//g, '-')}
+                        </div>
                       </td>
                     )}
-                    <td className="p-3 text-xs text-center align-middle text-gray-600 border whitespace-nowrap">
-                      {slot.startTime} - {slot.endTime}
+                    <td className="p-4 text-xs text-center align-middle text-gray-700 border border-gray-200 whitespace-nowrap font-medium">
+                      <div className="bg-gray-50 px-2 py-1 rounded-md">
+                        {slot.startTime} - {slot.endTime}
+                      </div>
                     </td>
-                    {pivotData.locations.map(location => {
+                    {sortedLocations.map(location => {
                       const teachersInSlot = slot.assignmentsByLocation[location] || [];
                       const slotId = `${slot.date}_${slot.startTime}_${slot.endTime}_${location}`;
                       
                       return (
                         <td 
                           key={location}
-                          className="p-2 border align-top min-w-[120px]"
+                          className="p-3 border border-gray-200 align-top min-w-[140px] bg-white"
                         >
-                          <div className="space-y-1">
-                            {teachersInSlot.map((teacher, teacherIndex) => {
-                              const assignmentId = `${slotId}_${teacherIndex}`;
-                              return (
-                                <DraggableTeacher
-                                  key={assignmentId}
-                                  teacher={teacher}
-                                  assignmentId={assignmentId}
-                                  onDrop={handleSwap}
-                                />
-                              );
-                            })}
+                          <div className="space-y-2 min-h-[60px]">
+                            {teachersInSlot.length > 0 ? (
+                              teachersInSlot.map((teacher, teacherIndex) => {
+                                const assignmentId = `${slotId}_${teacherIndex}`;
+                                return (
+                                  <DraggableTeacher
+                                    key={assignmentId}
+                                    teacher={teacher}
+                                    assignmentId={assignmentId}
+                                    onDrop={handleSwap}
+                                  />
+                                );
+                              })
+                            ) : (
+                              <div className="text-center py-4 text-gray-400 text-xs border-2 border-dashed border-gray-200 rounded-lg">
+                                暂无安排
+                              </div>
+                            )}
                           </div>
                         </td>
                       );
