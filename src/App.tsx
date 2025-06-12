@@ -9,7 +9,6 @@ import RulesPanel from './components/RulesPanel';
 import Modal from './components/ui/Modal';
 import Alert from './components/ui/Alert';
 import Card from './components/ui/Card';
-import StepIndicator, { defaultSteps } from './components/ui/StepIndicator';
 import ConfirmModal from './components/ui/ConfirmModal';
 import ProgressModal from './components/ui/ProgressModal';
 import { Teacher, Schedule, HistoricalStats, Session, Slot } from './types';
@@ -48,14 +47,6 @@ function App() {
   const showAlert = useCallback((type: 'success' | 'error' | 'warning', title: string, message: string) => {
     setAlertMessage({ type, title, message });
   }, []);
-
-  // Calculate current step
-  const currentStep = useMemo(() => {
-    if (assignments.length > 0) return 4; // Completed
-    if (teachers.length > 0 && schedules.length > 0) return 3; // Ready to generate
-    if (teachers.length > 0 || schedules.length > 0) return 2; // Partial data uploaded
-    return 1; // Initial state
-  }, [teachers.length, schedules.length, assignments.length]);
 
   const groupScheduleIntoSessions = useCallback((scheduleData: Schedule[]) => {
     const sessionMap = new Map<string, Session>();
@@ -209,13 +200,6 @@ function App() {
           <p className="text-gray-600 text-lg">基于智能算法的自动化排班解决方案</p>
         </header>
 
-        {/* Step Indicator */}
-        <div className="mb-8">
-          <Card className="bg-white/90">
-            <StepIndicator currentStep={currentStep} steps={defaultSteps} />
-          </Card>
-        </div>
-
         {/* Alert Messages */}
         {alertMessage && (
           <div className="mb-6">
@@ -245,8 +229,13 @@ function App() {
           <div className="col-span-12 lg:col-span-3 space-y-4">
             {/* File Upload Card - Compressed */}
             <Card 
-              title="数据导入" 
-              icon={<FileText className="w-5 h-5 text-blue-600" />}
+              title={
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
+                  <FileText className="w-5 h-5 text-blue-600" />
+                  <span>数据导入</span>
+                </div>
+              }
               className="h-fit"
               padding="sm"
             >
@@ -258,8 +247,13 @@ function App() {
 
             {/* Rules Configuration Card - Compressed */}
             <Card 
-              title="规则配置" 
-              icon={<Settings className="w-5 h-5 text-green-600" />}
+              title={
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
+                  <Settings className="w-5 h-5 text-green-600" />
+                  <span>规则配置</span>
+                </div>
+              }
               className="flex-1"
               padding="sm"
             >
@@ -283,6 +277,7 @@ function App() {
                 disabled={!canGenerate || isLoading}
                 className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg hover:shadow-xl disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-3"
               >
+                <div className="w-6 h-6 bg-white/20 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
                 <Wand2 className="w-5 h-5" />
                 <span>{isLoading ? '分配中...' : '开始智能分配'}</span>
               </button>
@@ -300,8 +295,12 @@ function App() {
           {/* Center Panel - Schedule Preview */}
           <div className="col-span-12 lg:col-span-6">
             <Card 
-              title="排班预览" 
-              icon={<Calendar className="w-5 h-5 text-purple-600" />}
+              title={
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-purple-600" />
+                  <span>排班预览</span>
+                </div>
+              }
               className="h-[80vh] flex flex-col"
               padding="sm"
             >
@@ -353,8 +352,12 @@ function App() {
           {/* Right Panel - Statistics */}
           <div className="col-span-12 lg:col-span-3">
             <Card 
-              title="数据统计" 
-              icon={<BarChart3 className="w-5 h-5 text-orange-600" />}
+              title={
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-orange-600" />
+                  <span>数据统计</span>
+                </div>
+              }
               className="h-[80vh] flex flex-col"
               padding="sm"
             >
