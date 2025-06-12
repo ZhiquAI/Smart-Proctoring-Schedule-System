@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { MessageCircle, Send, Sparkles, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { MessageCircle, Send, Sparkles, X, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import Modal from './ui/Modal';
+import aiService from '../services/aiService';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  confidence?: number;
 }
 
 interface AIChatPanelProps {
@@ -13,37 +15,65 @@ interface AIChatPanelProps {
   onClose: () => void;
   currentRules: any;
   onRulesChange: (newRules: any) => void;
+  teachers?: any[];
+  schedules?: any[];
+  conflicts?: any[];
 }
 
 const AIChatPanel: React.FC<AIChatPanelProps> = ({
   isOpen,
   onClose,
   currentRules,
-  onRulesChange
+  onRulesChange,
+  teachers = [],
+  schedules = [],
+  conflicts = []
 }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '您好！我是智能排班助手。您可以用自然语言告诉我排班规则，比如："张老师不能在周一监考"或"每个老师最多连续监考2场"。',
-      timestamp: new Date()
+      content: '您好！我是智能排班助手 🤖\n\n我可以帮您：\n• 用自然语言设置排班规则\n• 分析排班冲突并提供解决方案\n• 根据您的需求生成排班建议\n• 解释当前的规则设置\n\n请告诉我您需要什么帮助！',
+      timestamp: new Date(),
+      confidence: 1.0
     }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 模拟 AI 响应（实际项目中这里会调用后端 API）
-  const simulateAIResponse = async (userInput: string): Promise<string> => {
-    // 简单的规则匹配示例
-    if (userInput.includes('不能') || userInput.includes('排除')) {
-      return '好的，我已经理解您要排除某些教师的特定时段。请在左侧的"按教师排除"面板中进行具体设置。';
+  // 检查 AI 服务连接状态
+  useEffect(() => {
+    const checkConnection = async () => {
+      const connected = await aiService.checkHealth();
+      setIsConnected(connected);
+    };
+
+    if (isOpen) {
+      checkConnection();
+      const interval = setInterval(checkConnection, 30000); // 每30秒检查一次
+      return () => clearInterval(interval);
     }
-    if (userInput.includes('最多') || userInput.includes('连续')) {
-      return '明白了，您想设置教师的工作量限制。这个功能将在后续版本中实现。';
+  }, [isOpen]);
+
+  // 自动滚动到底部
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const determineTaskFromInput = (input: string): string => {
+    const lowerInput = input.toLowerCase();
+    
+    if (lowerInput.includes('冲突') || lowerInput.includes('问题') || lowerInput.includes('错误')) {
+      return 'ANALYZE_CONFLICT';
     }
-    if (userInput.includes('指定') || userInput.includes('安排')) {
-      return '收到！您可以在左侧的"指定监考"面板中为特定教师指定监考任务。';
+    if (lowerInput.includes('建议') || lowerInput.includes('推荐') || lowerInput.includes('怎么安排')) {
+      return 'GENERATE_SCHEDULE';
     }
-    return '我正在学习中，暂时还不能完全理解您的需求。请尝试使用左侧的规则配置面板进行设置。';
+    if (lowerInput.includes('解释') || lowerInput.includes('说明') || lowerInput.includes('什么意思')) {
+      return 'EXPLAIN_RULES';
+    }
+    return 'UPDATE_RULES';
   };
 
   const handleSendMessage = async () => {
@@ -60,24 +90,45 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
     setIsLoading(true);
 
     try {
-      // 模拟网络延迟
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const aiResponse = await simulateAIResponse(userMessage.content);
-      
+      if (!isConnected) {
+        throw new Error('AI 服务未连接');
+      }
+
+      const task = determineTaskFromInput(userMessage.content);
+      const context = {
+        task: task as any,
+        currentRules,
+        teachers,
+        schedules,
+        conflictInfo: conflicts
+      };
+
+      const response = await aiService.sendMessage(
+        [...messages, userMessage],
+        context
+      );
+
       const assistantMessage: Message = {
         role: 'assistant',
-        content: aiResponse,
-        timestamp: new Date()
+        content: response.textResponse,
+        timestamp: new Date(),
+        confidence: response.confidence
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+
+      // 如果 AI 返回了更新的规则，应用它们
+      if (response.updatedRules) {
+        onRulesChange(response.updatedRules);
+      }
+
     } catch (error) {
       console.error('AI response error:', error);
       const errorMessage: Message = {
         role: 'assistant',
-        content: '抱歉，我暂时无法响应。请稍后再试。',
-        timestamp: new Date()
+        content: `抱歉，我遇到了一些问题：${error instanceof Error ? error.message : '未知错误'}\n\n请稍后再试，或者尝试使用左侧的手动配置面板。`,
+        timestamp: new Date(),
+        confidence: 0
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
@@ -92,9 +143,35 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
     }
   };
 
+  const getQuickActions = () => [
+    {
+      text: "分析当前冲突",
+      action: () => setInput("请分析当前的排班冲突并提供解决方案"),
+      disabled: conflicts.length === 0
+    },
+    {
+      text: "解释当前规则",
+      action: () => setInput("请解释当前设置的排班规则"),
+      disabled: !currentRules || (currentRules.designated?.length === 0 && currentRules.forced?.length === 0)
+    },
+    {
+      text: "优化排班建议",
+      action: () => setInput("请为当前的教师和考试安排提供优化建议"),
+      disabled: teachers.length === 0 || schedules.length === 0
+    }
+  ];
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="AI 智能助手" size="lg">
       <div className="flex flex-col h-[600px]">
+        {/* 连接状态指示器 */}
+        <div className={`flex items-center gap-2 px-4 py-2 text-sm ${
+          isConnected ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+        }`}>
+          {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+          <span>{isConnected ? 'AI 服务已连接' : 'AI 服务未连接 - 使用模拟模式'}</span>
+        </div>
+
         {/* 消息区域 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
           {messages.map((message, index) => (
@@ -113,13 +190,24 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
                   {message.role === 'assistant' && (
                     <Sparkles className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
                   )}
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <p className={`text-xs mt-1 ${
-                      message.role === 'user' ? 'text-blue-100' : 'text-gray-400'
-                    }`}>
-                      {message.timestamp.toLocaleTimeString()}
-                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <p className={`text-xs ${
+                        message.role === 'user' ? 'text-blue-100' : 'text-gray-400'
+                      }`}>
+                        {message.timestamp.toLocaleTimeString()}
+                      </p>
+                      {message.role === 'assistant' && message.confidence !== undefined && (
+                        <div className={`text-xs px-2 py-1 rounded ${
+                          message.confidence > 0.8 ? 'bg-green-100 text-green-700' :
+                          message.confidence > 0.5 ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {message.confidence === 0 ? '错误' : `置信度 ${Math.round(message.confidence * 100)}%`}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -136,6 +224,24 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
               </div>
             </div>
           )}
+          
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* 快捷操作 */}
+        <div className="px-4 py-2 bg-gray-100 border-t border-gray-200">
+          <div className="flex flex-wrap gap-2">
+            {getQuickActions().map((action, index) => (
+              <button
+                key={index}
+                onClick={action.action}
+                disabled={action.disabled || isLoading}
+                className="px-3 py-1 text-xs bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {action.text}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* 输入区域 */}
@@ -145,8 +251,8 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="用自然语言描述您的排班需求..."
-              className="flex-1 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder={isConnected ? "用自然语言描述您的排班需求..." : "AI 服务未连接，请检查后端服务"}
+              className="flex-1 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
               rows={2}
               disabled={isLoading}
             />
@@ -161,7 +267,7 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
           </div>
           
           <div className="mt-2 text-xs text-gray-500">
-            💡 提示：您可以说"张老师不能在周一监考"、"每个老师最多连续监考2场"等
+            💡 提示：您可以说"张老师不能在周一监考"、"分析当前冲突"、"优化排班安排"等
           </div>
         </div>
       </div>
