@@ -90,10 +90,6 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
     setIsLoading(true);
 
     try {
-      if (!isConnected) {
-        throw new Error('AI 服务未连接');
-      }
-
       const task = determineTaskFromInput(userMessage.content);
       const context = {
         task: task as any,
@@ -251,7 +247,7 @@ const AIChatPanel: React.FC<AIChatPanelProps> = ({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={isConnected ? "用自然语言描述您的排班需求..." : "AI 服务未连接，请检查后端服务"}
+              placeholder="用自然语言描述您的排班需求..."
               className="flex-1 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
               rows={2}
               disabled={isLoading}
