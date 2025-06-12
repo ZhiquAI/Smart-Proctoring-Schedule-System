@@ -270,8 +270,9 @@ function App() {
               </div>
             </Card>
 
-            {/* Action Buttons - Fixed at Bottom */}
+            {/* Action Buttons - Fixed at Bottom - Horizontal Layout */}
             <div className="space-y-3">
+              {/* Primary Action Button */}
               <button
                 onClick={handleGenerateAssignments}
                 disabled={!canGenerate || isLoading}
@@ -282,13 +283,16 @@ function App() {
                 <span>{isLoading ? '分配中...' : '开始智能分配'}</span>
               </button>
 
-              <button
-                onClick={() => setShowResetModal(true)}
-                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>重置所有数据</span>
-              </button>
+              {/* Secondary Actions - Horizontal Layout */}
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => setShowResetModal(true)}
+                  className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>重置所有数据</span>
+                </button>
+              </div>
             </div>
           </div>
 
