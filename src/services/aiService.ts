@@ -238,3 +238,5 @@ export class AIService {
 
 // 创建单例实例
 export const aiService = new AIService();
+
+export default aiService
