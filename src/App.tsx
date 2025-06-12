@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { Calendar, Download, AlertTriangle, CheckCircle, Wand2, FileText, Printer, RotateCcw, Settings, BarChart3 } from 'lucide-react';
+import { Calendar, Download, AlertTriangle, CheckCircle, Wand2, FileText, Printer, RotateCcw, Settings, BarChart3, MessageCircle } from 'lucide-react';
 import { useScheduling } from './hooks/useScheduling';
 import { exportToExcel, exportHistoricalStats } from './utils/export';
 import FileUpload from './components/FileUpload';
 import ScheduleTable from './components/ScheduleTable';
 import StatisticsPanel from './components/StatisticsPanel';
 import RulesPanel from './components/RulesPanel';
+import AIChatPanel from './components/AIChatPanel';
 import Modal from './components/ui/Modal';
 import Alert from './components/ui/Alert';
 import Card from './components/ui/Card';
@@ -42,6 +43,7 @@ function App() {
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
   const [printTeacher, setPrintTeacher] = useState<string>('');
 
   const showAlert = useCallback((type: 'success' | 'error' | 'warning', title: string, message: string) => {
@@ -182,6 +184,12 @@ function App() {
     showAlert('success', '成功', '所有数据已重置');
   }, [resetAllData, showAlert]);
 
+  const handleRulesChange = useCallback((newRules: any) => {
+    // 这里可以根据 AI 返回的规则更新应用状态
+    // 目前作为演示，我们只是显示一个提示
+    showAlert('info', 'AI 助手', '规则更新功能正在开发中...');
+  }, [showAlert]);
+
   const conflicts = getConflicts();
   const canGenerate = teachers.length > 0 && schedules.length > 0;
 
@@ -272,6 +280,15 @@ function App() {
 
             {/* Action Buttons - Fixed at Bottom - Horizontal Layout */}
             <div className="space-y-3">
+              {/* AI Assistant Button */}
+              <button
+                onClick={() => setShowAIChat(true)}
+                className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>AI 智能助手</span>
+              </button>
+
               {/* Primary Action Button */}
               <button
                 onClick={handleGenerateAssignments}
@@ -399,6 +416,13 @@ function App() {
         progress={progress.progress}
         message={progress.message}
         title="智能排班中"
+      />
+
+      <AIChatPanel
+        isOpen={showAIChat}
+        onClose={() => setShowAIChat(false)}
+        currentRules={specialTasks}
+        onRulesChange={handleRulesChange}
       />
 
       <Modal
