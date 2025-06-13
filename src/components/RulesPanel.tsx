@@ -148,10 +148,10 @@ const RulesPanel: React.FC<RulesPanelProps> = ({
 
   return (
     <div className={`space-y-4 ${className}`}>
-      {/* Exclusion Rules */}
+      {/* Priority Exclusion Rules */}
       <RuleSection
         id="exclusion"
-        title="按教师排除"
+        title="优先排除"
         icon={<UserMinus className="w-4 h-4 text-red-500" />}
       >
         <div className="space-y-3">
