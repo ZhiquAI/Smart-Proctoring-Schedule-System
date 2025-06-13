@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { BarChart3, Download, Printer, Trophy, TrendingUp } from 'lucide-react';
+import { BarChart3, Download, Printer, Trophy, TrendingUp, Users, Clock } from 'lucide-react';
 import { Assignment, Teacher, HistoricalStats, TeacherStats } from '../types';
 
 interface StatisticsPanelProps {
@@ -40,15 +40,23 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
     return teachers.map(teacher => {
       const name = teacher.name;
       const currentAssignments = assignments.filter(a => 
-        a.teacher === name && !a.teacher.startsWith('!!')
+        a.teacher === name || a.teacher === `${name} (联排)`
       );
       
       const current = currentAssignments.reduce((acc, a) => {
         acc.count++;
         const duration = calculateDuration(a.startTime, a.endTime);
-        acc.duration += duration;
+        
+        // 联排监考按0.75倍计算工作量
+        const adjustedDuration = a.teacher.includes('(联排)') ? duration * 0.75 : duration;
+        acc.duration += adjustedDuration;
+        
+        if (a.teacher.includes('(联排)')) {
+          acc.jointCount++;
+        }
+        
         return acc;
-      }, { count: 0, duration: 0 });
+      }, { count: 0, duration: 0, jointCount: 0 });
 
       const historical = historicalStats[name] || { count: 0, duration: 0 };
       const total = {
@@ -58,20 +66,38 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
 
       return {
         name,
-        current,
+        current: {
+          ...current,
+          jointCount: current.jointCount
+        },
         total,
         department: teacher.department
-      } as TeacherStats;
+      } as TeacherStats & { current: { count: number; duration: number; jointCount: number } };
     }).sort((a, b) => b.total.duration - a.total.duration);
   }, [assignments, teachers, historicalStats]);
 
-  const getStatsBadge = (index: number, total: number) => {
-    if (index === 0) return { bg: 'bg-red-50', border: 'border-red-200', icon: '🥇' };
-    if (index === 1) return { bg: 'bg-orange-50', border: 'border-orange-200', icon: '🥈' };
-    if (index === 2) return { bg: 'bg-yellow-50', border: 'border-yellow-200', icon: '🥉' };
-    if (index < 5) return { bg: 'bg-blue-50', border: 'border-blue-200', icon: '📊' };
-    if (index >= total - 3) return { bg: 'bg-green-50', border: 'border-green-200', icon: '🌱' };
-    return { bg: 'bg-white', border: 'border-gray-200', icon: '👤' };
+  // 计算工作量均衡度
+  const workloadBalance = useMemo(() => {
+    if (stats.length === 0) return { average: 0, variance: 0, maxDeviation: 0 };
+    
+    const durations = stats.map(s => s.current.duration);
+    const average = durations.reduce((sum, d) => sum + d, 0) / durations.length;
+    const variance = durations.reduce((sum, d) => sum + Math.pow(d - average, 2), 0) / durations.length;
+    const maxDeviation = Math.max(...durations.map(d => Math.abs(d - average)));
+    
+    return { average, variance, maxDeviation };
+  }, [stats]);
+
+  const getStatsBadge = (index: number, total: number, stat: any) => {
+    const isOverloaded = stat.current.duration > workloadBalance.average * 1.3;
+    const isUnderloaded = stat.current.duration < workloadBalance.average * 0.7 && workloadBalance.average > 0;
+    
+    if (isOverloaded) return { bg: 'bg-orange-50', border: 'border-orange-200', icon: '⚡', label: '工作量较重' };
+    if (isUnderloaded) return { bg: 'bg-green-50', border: 'border-green-200', icon: '🌱', label: '工作量较轻' };
+    if (index === 0) return { bg: 'bg-red-50', border: 'border-red-200', icon: '🥇', label: '最多' };
+    if (index === 1) return { bg: 'bg-orange-50', border: 'border-orange-200', icon: '🥈', label: '第二' };
+    if (index === 2) return { bg: 'bg-yellow-50', border: 'border-yellow-200', icon: '🥉', label: '第三' };
+    return { bg: 'bg-white', border: 'border-gray-200', icon: '👤', label: '正常' };
   };
 
   if (stats.length === 0 || assignments.length === 0) {
@@ -117,6 +143,27 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
 
   return (
     <div className={`flex flex-col ${className}`}>
+      {/* 工作量均衡度概览 */}
+      <div className="p-3 border rounded-lg mb-4 bg-gradient-to-r from-blue-50 to-purple-50">
+        <h4 className="font-semibold text-sm mb-2 text-gray-700 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4" />
+          工作量均衡度
+        </h4>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="bg-white/70 p-2 rounded">
+            <div className="text-gray-600">平均工作量</div>
+            <div className="font-bold text-blue-600">{formatDuration(workloadBalance.average)}</div>
+          </div>
+          <div className="bg-white/70 p-2 rounded">
+            <div className="text-gray-600">最大偏差</div>
+            <div className="font-bold text-purple-600">{formatDuration(workloadBalance.maxDeviation)}</div>
+          </div>
+        </div>
+        <div className="mt-2 text-xs text-gray-600">
+          💡 系统支持工作量动态均衡，短期不均衡可通过长期调整实现公平
+        </div>
+      </div>
+
       {/* History Management */}
       <div className="p-4 border border-dashed rounded-lg mb-4 bg-gray-50">
         <h4 className="font-semibold text-sm text-center mb-3 text-gray-600 flex items-center justify-center gap-2">
@@ -148,7 +195,7 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
       {/* Statistics */}
       <div className="space-y-3 max-h-[60vh] overflow-y-auto">
         {stats.map((stat, index) => {
-          const badge = getStatsBadge(index, stats.length);
+          const badge = getStatsBadge(index, stats.length, stat);
           
           return (
             <div
@@ -157,7 +204,7 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
             >
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-base">{badge.icon}</span>
+                  <span className="text-base" title={badge.label}>{badge.icon}</span>
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">{stat.name}</p>
                     {stat.department && (
@@ -177,7 +224,18 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
               <div className="space-y-2 text-gray-600">
                 <div className="bg-blue-100/50 px-2 py-1 rounded flex justify-between">
                   <span><strong>本次:</strong></span>
-                  <span>{stat.current.count} 次, {formatDuration(stat.current.duration)}</span>
+                  <span>
+                    {stat.current.count} 次
+                    {stat.current.jointCount > 0 && (
+                      <span className="text-orange-600 ml-1" title="联排监考次数">
+                        (含{stat.current.jointCount}次联排)
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="bg-blue-100/50 px-2 py-1 rounded flex justify-between">
+                  <span><strong>时长:</strong></span>
+                  <span>{formatDuration(stat.current.duration)}</span>
                 </div>
                 <div className="font-bold bg-emerald-100/50 px-2 py-1 rounded flex justify-between">
                   <span><strong>累计:</strong></span>
