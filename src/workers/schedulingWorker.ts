@@ -24,7 +24,30 @@ function convertExclusionsToMap(exclusionsArray: [string, string[]][]): Map<stri
   return map;
 }
 
-// Improved scheduling algorithm implementation - Process by day
+// Check if two locations are adjacent (can be supervised jointly)
+function areLocationsAdjacent(loc1: string, loc2: string): boolean {
+  // Extract numbers from location strings (e.g., "A101" -> 101)
+  const getLocationNumber = (loc: string): number => {
+    const match = loc.match(/(\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
+  
+  // Extract building prefix (e.g., "A101" -> "A")
+  const getLocationPrefix = (loc: string): string => {
+    const match = loc.match(/^([A-Za-z]+)/);
+    return match ? match[1] : '';
+  };
+  
+  const prefix1 = getLocationPrefix(loc1);
+  const prefix2 = getLocationPrefix(loc2);
+  const num1 = getLocationNumber(loc1);
+  const num2 = getLocationNumber(loc2);
+  
+  // Same building and adjacent room numbers
+  return prefix1 === prefix2 && Math.abs(num1 - num2) <= 2;
+}
+
+// Improved scheduling algorithm - Day-first with joint supervision
 function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
   const { teachers, schedules, sessions, specialTasks, teacherExclusions: exclusionsArray, historicalStats } = params;
   const teacherExclusions = convertExclusionsToMap(exclusionsArray);
@@ -56,7 +79,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
 
   // Sort dates chronologically
   const sortedDates = Array.from(sessionsByDate.keys()).sort((a, b) => 
-    new Date(a).getTime() - new Date(b).getTime()
+    new Date(a).getTime() - new Date(b.getTime())
   );
 
   // Sort sessions within each date by start time
@@ -72,7 +95,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     payload: { progress: 20, message: '正在处理强制分配...' }
   });
 
-  // Process forced assignments first (but still by date order)
+  // Process forced assignments first
   sortedDates.forEach(date => {
     const sessionsForDate = sessionsByDate.get(date)!;
     
@@ -104,7 +127,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     payload: { progress: 30, message: '正在处理指定监考...' }
   });
 
-  // Process designated assignments (by date order)
+  // Process designated assignments
   sortedDates.forEach(date => {
     const sessionsForDate = sessionsByDate.get(date)!;
     
@@ -112,7 +135,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
       specialTasks.designated
         .filter(designated => designated.slotId === session.id)
         .forEach(designated => {
-          // Check if this slot is not already assigned by forced assignment
+          // Check if this slot is not already assigned
           const alreadyAssigned = assignments.some(a =>
             a.date === session.date &&
             a.startTime === session.startTime &&
@@ -143,35 +166,28 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
 
   self.postMessage({
     type: 'PROGRESS',
-    payload: { progress: 50, message: '开始按天智能分配...' }
+    payload: { progress: 50, message: '开始按天优先分配...' }
   });
 
-  // Count total required assignments for progress tracking
-  let totalRequired = 0;
-  let processedCount = 0;
-
-  sessions.forEach(session => {
-    session.slots.forEach(slot => {
-      totalRequired += slot.required;
-    });
-  });
-
-  // Main assignment logic - Process day by day
+  // Main assignment logic - Process day by day with priority on completing each day
   sortedDates.forEach((date, dateIndex) => {
     const sessionsForDate = sessionsByDate.get(date)!;
     
     self.postMessage({
       type: 'PROGRESS',
       payload: { 
-        progress: 50 + (dateIndex / sortedDates.length) * 30, 
-        message: `正在安排第 ${dateIndex + 1} 天 (${date})...` 
+        progress: 50 + (dateIndex / sortedDates.length) * 40, 
+        message: `正在优先安排第 ${dateIndex + 1} 天 (${date})...` 
       }
     });
 
+    // For each day, we need to ensure ALL sessions are covered
     // Process each session in chronological order within the day
     sessionsForDate.forEach(session => {
+      // Collect all unassigned slots for this session
+      const unassignedSlots: Array<{location: string, needed: number}> = [];
+      
       session.slots.forEach(slot => {
-        // Check how many teachers are already assigned to this slot
         const existingAssignments = assignments.filter(a => 
           a.date === session.date &&
           a.startTime === session.startTime &&
@@ -179,53 +195,32 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
           a.location === slot.location
         ).length;
 
-        // Assign remaining teachers needed for this slot
         const remainingNeeded = slot.required - existingAssignments;
-        
-        for (let i = 0; i < remainingNeeded; i++) {
-          // Find available teachers for this specific slot
-          const availableTeachers = teachers.filter(teacher => {
-            // Check if teacher is already assigned to this exact slot
-            const alreadyAssignedToSlot = assignments.some(a =>
-              a.teacher === teacher.name &&
-              a.date === session.date &&
-              a.startTime === session.startTime &&
-              a.endTime === session.endTime &&
-              a.location === slot.location
-            );
-
-            if (alreadyAssignedToSlot) {
-              return false;
-            }
-
-            // Check exclusions
-            const exclusions = teacherExclusions.get(teacher.name);
-            if (exclusions) {
-              if (exclusions.has(`${session.id}_all`) || exclusions.has(`${session.id}_${slot.location}`)) {
-                return false;
-              }
-            }
-
-            // Check time conflicts with other assignments on the same day
-            const hasTimeConflict = assignments.some(existing => 
-              existing.teacher === teacher.name &&
-              existing.date === session.date &&
-              timeOverlap(
-                existing.startTime, existing.endTime,
-                session.startTime, session.endTime
-              )
-            );
-
-            return !hasTimeConflict;
+        if (remainingNeeded > 0) {
+          unassignedSlots.push({
+            location: slot.location,
+            needed: remainingNeeded
           });
+        }
+      });
+
+      // Strategy 1: Try to assign individual teachers to each slot
+      unassignedSlots.forEach(slotInfo => {
+        for (let i = 0; i < slotInfo.needed; i++) {
+          const availableTeachers = getAvailableTeachers(
+            teachers, 
+            session, 
+            slotInfo.location, 
+            assignments, 
+            teacherExclusions
+          );
 
           if (availableTeachers.length > 0) {
-            // Sort by current workload (ascending) to balance load
+            // Sort by workload for fair distribution
             availableTeachers.sort((a, b) => {
               const workloadA = teacherWorkload.get(a.name) || 0;
               const workloadB = teacherWorkload.get(b.name) || 0;
               
-              // If workloads are equal, prefer teachers with fewer assignments today
               if (workloadA === workloadB) {
                 const todayAssignmentsA = assignments.filter(assign => 
                   assign.teacher === a.name && assign.date === date
@@ -247,7 +242,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
               date: session.date,
               startTime: session.startTime,
               endTime: session.endTime,
-              location: slot.location,
+              location: slotInfo.location,
               teacher: selectedTeacher.name,
               assignedBy: 'auto'
             });
@@ -257,22 +252,115 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
             teacherWorkload.set(selectedTeacher.name, 
               (teacherWorkload.get(selectedTeacher.name) || 0) + duration
             );
-          } else {
-            // No available teacher - create error assignment
-            assignments.push({
-              id: `assignment_${assignmentId++}`,
-              date: session.date,
-              startTime: session.startTime,
-              endTime: session.endTime,
-              location: slot.location,
-              teacher: `!!无可用教师-${slot.location}`,
-              assignedBy: 'auto'
-            });
           }
-
-          processedCount++;
         }
       });
+
+      // Strategy 2: For remaining unassigned slots, try joint supervision
+      const stillUnassigned = unassignedSlots.filter(slotInfo => {
+        const currentAssignments = assignments.filter(a => 
+          a.date === session.date &&
+          a.startTime === session.startTime &&
+          a.endTime === session.endTime &&
+          a.location === slotInfo.location
+        ).length;
+        
+        const originalSlot = session.slots.find(s => s.location === slotInfo.location);
+        return currentAssignments < (originalSlot?.required || 1);
+      });
+
+      if (stillUnassigned.length > 0) {
+        // Try to find teachers who can supervise multiple adjacent locations
+        stillUnassigned.forEach(slotInfo => {
+          const originalSlot = session.slots.find(s => s.location === slotInfo.location);
+          const stillNeeded = (originalSlot?.required || 1) - assignments.filter(a => 
+            a.date === session.date &&
+            a.startTime === session.startTime &&
+            a.endTime === session.endTime &&
+            a.location === slotInfo.location
+          ).length;
+
+          for (let i = 0; i < stillNeeded; i++) {
+            // Find teachers who might be able to do joint supervision
+            const availableForJoint = getAvailableTeachers(
+              teachers, 
+              session, 
+              slotInfo.location, 
+              assignments, 
+              teacherExclusions
+            );
+
+            if (availableForJoint.length > 0) {
+              // Check if this teacher can supervise adjacent locations
+              const selectedTeacher = availableForJoint[0];
+              
+              // Find adjacent unassigned locations
+              const adjacentUnassigned = stillUnassigned.filter(other => 
+                other.location !== slotInfo.location &&
+                areLocationsAdjacent(slotInfo.location, other.location)
+              );
+
+              if (adjacentUnassigned.length > 0) {
+                // Assign teacher to multiple adjacent locations (joint supervision)
+                assignments.push({
+                  id: `assignment_${assignmentId++}`,
+                  date: session.date,
+                  startTime: session.startTime,
+                  endTime: session.endTime,
+                  location: slotInfo.location,
+                  teacher: `${selectedTeacher.name} (联排)`,
+                  assignedBy: 'auto'
+                });
+
+                // Also assign to adjacent location
+                const adjacentLocation = adjacentUnassigned[0];
+                assignments.push({
+                  id: `assignment_${assignmentId++}`,
+                  date: session.date,
+                  startTime: session.startTime,
+                  endTime: session.endTime,
+                  location: adjacentLocation.location,
+                  teacher: `${selectedTeacher.name} (联排)`,
+                  assignedBy: 'auto'
+                });
+
+                // Update workload (count as 1.5x normal workload for joint supervision)
+                const duration = calculateDuration(session.startTime, session.endTime);
+                teacherWorkload.set(selectedTeacher.name, 
+                  (teacherWorkload.get(selectedTeacher.name) || 0) + duration * 1.5
+                );
+              } else {
+                // Regular single assignment
+                assignments.push({
+                  id: `assignment_${assignmentId++}`,
+                  date: session.date,
+                  startTime: session.startTime,
+                  endTime: session.endTime,
+                  location: slotInfo.location,
+                  teacher: selectedTeacher.name,
+                  assignedBy: 'auto'
+                });
+
+                const duration = calculateDuration(session.startTime, session.endTime);
+                teacherWorkload.set(selectedTeacher.name, 
+                  (teacherWorkload.get(selectedTeacher.name) || 0) + duration
+                );
+              }
+            } else {
+              // Last resort: create error assignment
+              assignments.push({
+                id: `assignment_${assignmentId++}`,
+                date: session.date,
+                startTime: session.startTime,
+                endTime: session.endTime,
+                location: slotInfo.location,
+                teacher: `!!人员不足-${slotInfo.location}`,
+                assignedBy: 'auto'
+              });
+            }
+          }
+        });
+      }
     });
   });
 
@@ -281,7 +369,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     payload: { progress: 90, message: '正在验证分配结果...' }
   });
 
-  // Final validation and optimization
+  // Final validation
   const validationResult = validateAssignments(assignments, teachers, teacherExclusions);
   
   self.postMessage({
@@ -292,6 +380,50 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
   return assignments;
 }
 
+// Helper function to get available teachers for a specific slot
+function getAvailableTeachers(
+  teachers: Teacher[],
+  session: Session,
+  location: string,
+  assignments: Assignment[],
+  teacherExclusions: Map<string, Set<string>>
+): Teacher[] {
+  return teachers.filter(teacher => {
+    // Check if teacher is already assigned to this exact slot
+    const alreadyAssignedToSlot = assignments.some(a =>
+      a.teacher === teacher.name &&
+      a.date === session.date &&
+      a.startTime === session.startTime &&
+      a.endTime === session.endTime &&
+      a.location === location
+    );
+
+    if (alreadyAssignedToSlot) {
+      return false;
+    }
+
+    // Check exclusions
+    const exclusions = teacherExclusions.get(teacher.name);
+    if (exclusions) {
+      if (exclusions.has(`${session.id}_all`) || exclusions.has(`${session.id}_${location}`)) {
+        return false;
+      }
+    }
+
+    // Check time conflicts with other assignments on the same day
+    const hasTimeConflict = assignments.some(existing => 
+      existing.teacher === teacher.name &&
+      existing.date === session.date &&
+      timeOverlap(
+        existing.startTime, existing.endTime,
+        session.startTime, session.endTime
+      )
+    );
+
+    return !hasTimeConflict;
+  });
+}
+
 // Validation function
 function validateAssignments(
   assignments: Assignment[], 
@@ -300,14 +432,17 @@ function validateAssignments(
 ): { isValid: boolean; issues: string[] } {
   const issues: string[] = [];
   
-  // Check for time conflicts
+  // Check for time conflicts (excluding joint supervision)
   const teacherSchedules = new Map<string, Assignment[]>();
   assignments.forEach(assignment => {
     if (!assignment.teacher.startsWith('!!')) {
-      if (!teacherSchedules.has(assignment.teacher)) {
-        teacherSchedules.set(assignment.teacher, []);
+      // Extract base teacher name (remove joint supervision marker)
+      const baseTeacherName = assignment.teacher.replace(' (联排)', '');
+      
+      if (!teacherSchedules.has(baseTeacherName)) {
+        teacherSchedules.set(baseTeacherName, []);
       }
-      teacherSchedules.get(assignment.teacher)!.push(assignment);
+      teacherSchedules.get(baseTeacherName)!.push(assignment);
     }
   });
 
@@ -321,6 +456,15 @@ function validateAssignments(
     for (let i = 0; i < schedule.length - 1; i++) {
       const current = schedule[i];
       const next = schedule[i + 1];
+      
+      // Skip if both are joint supervision at the same time (this is allowed)
+      if (current.date === next.date && 
+          current.startTime === next.startTime &&
+          current.endTime === next.endTime &&
+          current.teacher.includes('(联排)') &&
+          next.teacher.includes('(联排)')) {
+        continue;
+      }
       
       if (current.date === next.date && 
           timeOverlap(current.startTime, current.endTime, next.startTime, next.endTime)) {
