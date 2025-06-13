@@ -24,7 +24,7 @@ function convertExclusionsToMap(exclusionsArray: [string, string[]][]): Map<stri
   return map;
 }
 
-// Improved scheduling algorithm implementation
+// Improved scheduling algorithm implementation - Process by day
 function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
   const { teachers, schedules, sessions, specialTasks, teacherExclusions: exclusionsArray, historicalStats } = params;
   const teacherExclusions = convertExclusionsToMap(exclusionsArray);
@@ -38,57 +38,6 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     payload: { progress: 10, message: '正在分析教师可用性...' }
   });
 
-  // Track assigned slots to avoid duplicates
-  const assignedSlots = new Set<string>();
-
-  // Process forced assignments first
-  specialTasks.forced.forEach(forced => {
-    const session = sessions.find(s => s.id === forced.sessionId);
-    if (session) {
-      const slotKey = `${forced.sessionId}_${forced.location}`;
-      assignments.push({
-        id: `assignment_${assignmentId++}`,
-        date: session.date,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        location: forced.location,
-        teacher: forced.teacher,
-        assignedBy: 'forced'
-      });
-      assignedSlots.add(slotKey);
-    }
-  });
-
-  self.postMessage({
-    type: 'PROGRESS',
-    payload: { progress: 30, message: '正在处理指定监考...' }
-  });
-
-  // Process designated assignments
-  specialTasks.designated.forEach(designated => {
-    const session = sessions.find(s => s.id === designated.slotId);
-    if (session) {
-      const slotKey = `${designated.slotId}_${designated.location}`;
-      if (!assignedSlots.has(slotKey)) {
-        assignments.push({
-          id: `assignment_${assignmentId++}`,
-          date: designated.date,
-          startTime: session.startTime,
-          endTime: session.endTime,
-          location: designated.location,
-          teacher: designated.teacher,
-          assignedBy: 'designated'
-        });
-        assignedSlots.add(slotKey);
-      }
-    }
-  });
-
-  self.postMessage({
-    type: 'PROGRESS',
-    payload: { progress: 50, message: '正在计算最优分配方案...' }
-  });
-
   // Calculate teacher workload from historical data
   const teacherWorkload = new Map<string, number>();
   teachers.forEach(teacher => {
@@ -96,7 +45,108 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     teacherWorkload.set(teacher.name, historical.duration);
   });
 
-  // Count total required assignments
+  // Group sessions by date and sort by date
+  const sessionsByDate = new Map<string, Session[]>();
+  sessions.forEach(session => {
+    if (!sessionsByDate.has(session.date)) {
+      sessionsByDate.set(session.date, []);
+    }
+    sessionsByDate.get(session.date)!.push(session);
+  });
+
+  // Sort dates chronologically
+  const sortedDates = Array.from(sessionsByDate.keys()).sort((a, b) => 
+    new Date(a).getTime() - new Date(b).getTime()
+  );
+
+  // Sort sessions within each date by start time
+  sortedDates.forEach(date => {
+    const sessionsForDate = sessionsByDate.get(date)!;
+    sessionsForDate.sort((a, b) => 
+      timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+    );
+  });
+
+  self.postMessage({
+    type: 'PROGRESS',
+    payload: { progress: 20, message: '正在处理强制分配...' }
+  });
+
+  // Process forced assignments first (but still by date order)
+  sortedDates.forEach(date => {
+    const sessionsForDate = sessionsByDate.get(date)!;
+    
+    sessionsForDate.forEach(session => {
+      specialTasks.forced
+        .filter(forced => forced.sessionId === session.id)
+        .forEach(forced => {
+          assignments.push({
+            id: `assignment_${assignmentId++}`,
+            date: session.date,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            location: forced.location,
+            teacher: forced.teacher,
+            assignedBy: 'forced'
+          });
+          
+          // Update workload
+          const duration = calculateDuration(session.startTime, session.endTime);
+          teacherWorkload.set(forced.teacher, 
+            (teacherWorkload.get(forced.teacher) || 0) + duration
+          );
+        });
+    });
+  });
+
+  self.postMessage({
+    type: 'PROGRESS',
+    payload: { progress: 30, message: '正在处理指定监考...' }
+  });
+
+  // Process designated assignments (by date order)
+  sortedDates.forEach(date => {
+    const sessionsForDate = sessionsByDate.get(date)!;
+    
+    sessionsForDate.forEach(session => {
+      specialTasks.designated
+        .filter(designated => designated.slotId === session.id)
+        .forEach(designated => {
+          // Check if this slot is not already assigned by forced assignment
+          const alreadyAssigned = assignments.some(a =>
+            a.date === session.date &&
+            a.startTime === session.startTime &&
+            a.endTime === session.endTime &&
+            a.location === designated.location
+          );
+          
+          if (!alreadyAssigned) {
+            assignments.push({
+              id: `assignment_${assignmentId++}`,
+              date: designated.date,
+              startTime: session.startTime,
+              endTime: session.endTime,
+              location: designated.location,
+              teacher: designated.teacher,
+              assignedBy: 'designated'
+            });
+            
+            // Update workload
+            const duration = calculateDuration(session.startTime, session.endTime);
+            teacherWorkload.set(designated.teacher, 
+              (teacherWorkload.get(designated.teacher) || 0) + duration
+            );
+          }
+        });
+    });
+  });
+
+  self.postMessage({
+    type: 'PROGRESS',
+    payload: { progress: 50, message: '开始按天智能分配...' }
+  });
+
+  // Count total required assignments for progress tracking
   let totalRequired = 0;
   let processedCount = 0;
 
@@ -106,117 +156,183 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     });
   });
 
-  // Process all remaining slots that need assignments
-  sessions.forEach(session => {
-    session.slots.forEach(slot => {
-      const slotKey = `${session.id}_${slot.location}`;
-      
-      // Check how many teachers are already assigned to this slot
-      const existingAssignments = assignments.filter(a => 
-        a.date === session.date &&
-        a.startTime === session.startTime &&
-        a.endTime === session.endTime &&
-        a.location === slot.location
-      ).length;
+  // Main assignment logic - Process day by day
+  sortedDates.forEach((date, dateIndex) => {
+    const sessionsForDate = sessionsByDate.get(date)!;
+    
+    self.postMessage({
+      type: 'PROGRESS',
+      payload: { 
+        progress: 50 + (dateIndex / sortedDates.length) * 30, 
+        message: `正在安排第 ${dateIndex + 1} 天 (${date})...` 
+      }
+    });
 
-      // Assign remaining teachers needed for this slot
-      const remainingNeeded = slot.required - existingAssignments;
-      
-      for (let i = 0; i < remainingNeeded; i++) {
-        // Find available teacher
-        const availableTeachers = teachers.filter(teacher => {
-          // Check if teacher is already assigned to this exact slot
-          const alreadyAssignedToSlot = assignments.some(a =>
-            a.teacher === teacher.name &&
-            a.date === session.date &&
-            a.startTime === session.startTime &&
-            a.endTime === session.endTime &&
-            a.location === slot.location
-          );
+    // Process each session in chronological order within the day
+    sessionsForDate.forEach(session => {
+      session.slots.forEach(slot => {
+        // Check how many teachers are already assigned to this slot
+        const existingAssignments = assignments.filter(a => 
+          a.date === session.date &&
+          a.startTime === session.startTime &&
+          a.endTime === session.endTime &&
+          a.location === slot.location
+        ).length;
 
-          if (alreadyAssignedToSlot) {
-            return false;
-          }
+        // Assign remaining teachers needed for this slot
+        const remainingNeeded = slot.required - existingAssignments;
+        
+        for (let i = 0; i < remainingNeeded; i++) {
+          // Find available teachers for this specific slot
+          const availableTeachers = teachers.filter(teacher => {
+            // Check if teacher is already assigned to this exact slot
+            const alreadyAssignedToSlot = assignments.some(a =>
+              a.teacher === teacher.name &&
+              a.date === session.date &&
+              a.startTime === session.startTime &&
+              a.endTime === session.endTime &&
+              a.location === slot.location
+            );
 
-          // Check exclusions
-          const exclusions = teacherExclusions.get(teacher.name);
-          if (exclusions) {
-            if (exclusions.has(`${session.id}_all`) || exclusions.has(`${session.id}_${slot.location}`)) {
+            if (alreadyAssignedToSlot) {
               return false;
             }
+
+            // Check exclusions
+            const exclusions = teacherExclusions.get(teacher.name);
+            if (exclusions) {
+              if (exclusions.has(`${session.id}_all`) || exclusions.has(`${session.id}_${slot.location}`)) {
+                return false;
+              }
+            }
+
+            // Check time conflicts with other assignments on the same day
+            const hasTimeConflict = assignments.some(existing => 
+              existing.teacher === teacher.name &&
+              existing.date === session.date &&
+              timeOverlap(
+                existing.startTime, existing.endTime,
+                session.startTime, session.endTime
+              )
+            );
+
+            return !hasTimeConflict;
+          });
+
+          if (availableTeachers.length > 0) {
+            // Sort by current workload (ascending) to balance load
+            availableTeachers.sort((a, b) => {
+              const workloadA = teacherWorkload.get(a.name) || 0;
+              const workloadB = teacherWorkload.get(b.name) || 0;
+              
+              // If workloads are equal, prefer teachers with fewer assignments today
+              if (workloadA === workloadB) {
+                const todayAssignmentsA = assignments.filter(assign => 
+                  assign.teacher === a.name && assign.date === date
+                ).length;
+                const todayAssignmentsB = assignments.filter(assign => 
+                  assign.teacher === b.name && assign.date === date
+                ).length;
+                
+                return todayAssignmentsA - todayAssignmentsB;
+              }
+              
+              return workloadA - workloadB;
+            });
+
+            const selectedTeacher = availableTeachers[0];
+            
+            assignments.push({
+              id: `assignment_${assignmentId++}`,
+              date: session.date,
+              startTime: session.startTime,
+              endTime: session.endTime,
+              location: slot.location,
+              teacher: selectedTeacher.name,
+              assignedBy: 'auto'
+            });
+
+            // Update workload
+            const duration = calculateDuration(session.startTime, session.endTime);
+            teacherWorkload.set(selectedTeacher.name, 
+              (teacherWorkload.get(selectedTeacher.name) || 0) + duration
+            );
+          } else {
+            // No available teacher - create error assignment
+            assignments.push({
+              id: `assignment_${assignmentId++}`,
+              date: session.date,
+              startTime: session.startTime,
+              endTime: session.endTime,
+              location: slot.location,
+              teacher: `!!无可用教师-${slot.location}`,
+              assignedBy: 'auto'
+            });
           }
 
-          // Check time conflicts with other assignments
-          const hasTimeConflict = assignments.some(existing => 
-            existing.teacher === teacher.name &&
-            existing.date === session.date &&
-            timeOverlap(
-              existing.startTime, existing.endTime,
-              session.startTime, session.endTime
-            )
-          );
-
-          return !hasTimeConflict;
-        });
-
-        if (availableTeachers.length > 0) {
-          // Sort by workload (ascending) to balance load
-          availableTeachers.sort((a, b) => 
-            (teacherWorkload.get(a.name) || 0) - (teacherWorkload.get(b.name) || 0)
-          );
-
-          const selectedTeacher = availableTeachers[0];
-          
-          assignments.push({
-            id: `assignment_${assignmentId++}`,
-            date: session.date,
-            startTime: session.startTime,
-            endTime: session.endTime,
-            location: slot.location,
-            teacher: selectedTeacher.name,
-            assignedBy: 'auto'
-          });
-
-          // Update workload
-          const duration = calculateDuration(session.startTime, session.endTime);
-          teacherWorkload.set(selectedTeacher.name, 
-            (teacherWorkload.get(selectedTeacher.name) || 0) + duration
-          );
-        } else {
-          // No available teacher - create error assignment
-          assignments.push({
-            id: `assignment_${assignmentId++}`,
-            date: session.date,
-            startTime: session.startTime,
-            endTime: session.endTime,
-            location: slot.location,
-            teacher: `!!无可用教师-${slot.location}`,
-            assignedBy: 'auto'
-          });
+          processedCount++;
         }
-
-        processedCount++;
-        const progress = 50 + (processedCount / totalRequired) * 40;
-        
-        if (processedCount % 3 === 0 || processedCount === totalRequired) {
-          self.postMessage({
-            type: 'PROGRESS',
-            payload: { 
-              progress: Math.round(progress), 
-              message: `正在分配监考任务 ${processedCount}/${totalRequired}...` 
-            }
-          });
-        }
-      }
+      });
     });
   });
 
   self.postMessage({
     type: 'PROGRESS',
-    payload: { progress: 95, message: '正在验证分配结果...' }
+    payload: { progress: 90, message: '正在验证分配结果...' }
+  });
+
+  // Final validation and optimization
+  const validationResult = validateAssignments(assignments, teachers, teacherExclusions);
+  
+  self.postMessage({
+    type: 'PROGRESS',
+    payload: { progress: 95, message: '分配完成，正在生成报告...' }
   });
 
   return assignments;
+}
+
+// Validation function
+function validateAssignments(
+  assignments: Assignment[], 
+  teachers: Teacher[], 
+  teacherExclusions: Map<string, Set<string>>
+): { isValid: boolean; issues: string[] } {
+  const issues: string[] = [];
+  
+  // Check for time conflicts
+  const teacherSchedules = new Map<string, Assignment[]>();
+  assignments.forEach(assignment => {
+    if (!assignment.teacher.startsWith('!!')) {
+      if (!teacherSchedules.has(assignment.teacher)) {
+        teacherSchedules.set(assignment.teacher, []);
+      }
+      teacherSchedules.get(assignment.teacher)!.push(assignment);
+    }
+  });
+
+  teacherSchedules.forEach((schedule, teacher) => {
+    schedule.sort((a, b) => {
+      const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateCompare !== 0) return dateCompare;
+      return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    });
+    
+    for (let i = 0; i < schedule.length - 1; i++) {
+      const current = schedule[i];
+      const next = schedule[i + 1];
+      
+      if (current.date === next.date && 
+          timeOverlap(current.startTime, current.endTime, next.startTime, next.endTime)) {
+        issues.push(`${teacher} 在 ${current.date} 有时间冲突`);
+      }
+    }
+  });
+
+  return {
+    isValid: issues.length === 0,
+    issues
+  };
 }
 
 // Helper functions
