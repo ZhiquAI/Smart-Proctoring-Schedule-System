@@ -79,7 +79,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
 
   // Sort dates chronologically
   const sortedDates = Array.from(sessionsByDate.keys()).sort((a, b) => 
-    new Date(a).getTime() - new Date(b.getTime())
+    new Date(a).getTime() - new Date(b).getTime()
   );
 
   // Sort sessions within each date by start time
