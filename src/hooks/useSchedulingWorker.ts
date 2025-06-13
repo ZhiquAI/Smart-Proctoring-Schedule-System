@@ -65,7 +65,8 @@ export const useSchedulingWorker = () => {
       worker.onerror = (error) => {
         setIsLoading(false);
         setProgress({ progress: 0, message: '' });
-        reject(new Error('Worker error: ' + error.message));
+        const errorMessage = error.message || error.error?.message || 'Web Worker encountered an unknown error';
+        reject(new Error('Worker error: ' + errorMessage));
       };
 
       worker.postMessage({
