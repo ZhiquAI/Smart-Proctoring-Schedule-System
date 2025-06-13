@@ -24,30 +24,7 @@ function convertExclusionsToMap(exclusionsArray: [string, string[]][]): Map<stri
   return map;
 }
 
-// Check if two locations are adjacent (can be supervised jointly)
-function areLocationsAdjacent(loc1: string, loc2: string): boolean {
-  // Extract numbers from location strings (e.g., "A101" -> 101)
-  const getLocationNumber = (loc: string): number => {
-    const match = loc.match(/(\d+)/);
-    return match ? parseInt(match[1]) : 0;
-  };
-  
-  // Extract building prefix (e.g., "A101" -> "A")
-  const getLocationPrefix = (loc: string): string => {
-    const match = loc.match(/^([A-Za-z]+)/);
-    return match ? match[1] : '';
-  };
-  
-  const prefix1 = getLocationPrefix(loc1);
-  const prefix2 = getLocationPrefix(loc2);
-  const num1 = getLocationNumber(loc1);
-  const num2 = getLocationNumber(loc2);
-  
-  // Same building and adjacent room numbers
-  return prefix1 === prefix2 && Math.abs(num1 - num2) <= 2;
-}
-
-// Improved scheduling algorithm - Day-first with joint supervision
+// Improved scheduling algorithm - Day-first approach
 function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
   const { teachers, schedules, sessions, specialTasks, teacherExclusions: exclusionsArray, historicalStats } = params;
   const teacherExclusions = convertExclusionsToMap(exclusionsArray);
@@ -181,8 +158,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
       }
     });
 
-    // For each day, we need to ensure ALL sessions are covered
-    // Process each session in chronological order within the day
+    // For each day, process sessions in chronological order
     sessionsForDate.forEach(session => {
       // Collect all unassigned slots for this session
       const unassignedSlots: Array<{location: string, needed: number}> = [];
@@ -204,7 +180,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
         }
       });
 
-      // Strategy 1: Try to assign individual teachers to each slot
+      // Assign teachers to each unassigned slot
       unassignedSlots.forEach(slotInfo => {
         for (let i = 0; i < slotInfo.needed; i++) {
           const availableTeachers = getAvailableTeachers(
@@ -221,7 +197,8 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
               const workloadA = teacherWorkload.get(a.name) || 0;
               const workloadB = teacherWorkload.get(b.name) || 0;
               
-              if (workloadA === workloadB) {
+              // If workload is similar, prefer teachers with fewer assignments today
+              if (Math.abs(workloadA - workloadB) < 60) { // Within 1 hour difference
                 const todayAssignmentsA = assignments.filter(assign => 
                   assign.teacher === a.name && assign.date === date
                 ).length;
@@ -252,115 +229,20 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
             teacherWorkload.set(selectedTeacher.name, 
               (teacherWorkload.get(selectedTeacher.name) || 0) + duration
             );
+          } else {
+            // No available teachers - create error assignment
+            assignments.push({
+              id: `assignment_${assignmentId++}`,
+              date: session.date,
+              startTime: session.startTime,
+              endTime: session.endTime,
+              location: slotInfo.location,
+              teacher: `!!人员不足-${slotInfo.location}`,
+              assignedBy: 'auto'
+            });
           }
         }
       });
-
-      // Strategy 2: For remaining unassigned slots, try joint supervision
-      const stillUnassigned = unassignedSlots.filter(slotInfo => {
-        const currentAssignments = assignments.filter(a => 
-          a.date === session.date &&
-          a.startTime === session.startTime &&
-          a.endTime === session.endTime &&
-          a.location === slotInfo.location
-        ).length;
-        
-        const originalSlot = session.slots.find(s => s.location === slotInfo.location);
-        return currentAssignments < (originalSlot?.required || 1);
-      });
-
-      if (stillUnassigned.length > 0) {
-        // Try to find teachers who can supervise multiple adjacent locations
-        stillUnassigned.forEach(slotInfo => {
-          const originalSlot = session.slots.find(s => s.location === slotInfo.location);
-          const stillNeeded = (originalSlot?.required || 1) - assignments.filter(a => 
-            a.date === session.date &&
-            a.startTime === session.startTime &&
-            a.endTime === session.endTime &&
-            a.location === slotInfo.location
-          ).length;
-
-          for (let i = 0; i < stillNeeded; i++) {
-            // Find teachers who might be able to do joint supervision
-            const availableForJoint = getAvailableTeachers(
-              teachers, 
-              session, 
-              slotInfo.location, 
-              assignments, 
-              teacherExclusions
-            );
-
-            if (availableForJoint.length > 0) {
-              // Check if this teacher can supervise adjacent locations
-              const selectedTeacher = availableForJoint[0];
-              
-              // Find adjacent unassigned locations
-              const adjacentUnassigned = stillUnassigned.filter(other => 
-                other.location !== slotInfo.location &&
-                areLocationsAdjacent(slotInfo.location, other.location)
-              );
-
-              if (adjacentUnassigned.length > 0) {
-                // Assign teacher to multiple adjacent locations (joint supervision)
-                assignments.push({
-                  id: `assignment_${assignmentId++}`,
-                  date: session.date,
-                  startTime: session.startTime,
-                  endTime: session.endTime,
-                  location: slotInfo.location,
-                  teacher: `${selectedTeacher.name} (联排)`,
-                  assignedBy: 'auto'
-                });
-
-                // Also assign to adjacent location
-                const adjacentLocation = adjacentUnassigned[0];
-                assignments.push({
-                  id: `assignment_${assignmentId++}`,
-                  date: session.date,
-                  startTime: session.startTime,
-                  endTime: session.endTime,
-                  location: adjacentLocation.location,
-                  teacher: `${selectedTeacher.name} (联排)`,
-                  assignedBy: 'auto'
-                });
-
-                // Update workload (count as 1.5x normal workload for joint supervision)
-                const duration = calculateDuration(session.startTime, session.endTime);
-                teacherWorkload.set(selectedTeacher.name, 
-                  (teacherWorkload.get(selectedTeacher.name) || 0) + duration * 1.5
-                );
-              } else {
-                // Regular single assignment
-                assignments.push({
-                  id: `assignment_${assignmentId++}`,
-                  date: session.date,
-                  startTime: session.startTime,
-                  endTime: session.endTime,
-                  location: slotInfo.location,
-                  teacher: selectedTeacher.name,
-                  assignedBy: 'auto'
-                });
-
-                const duration = calculateDuration(session.startTime, session.endTime);
-                teacherWorkload.set(selectedTeacher.name, 
-                  (teacherWorkload.get(selectedTeacher.name) || 0) + duration
-                );
-              }
-            } else {
-              // Last resort: create error assignment
-              assignments.push({
-                id: `assignment_${assignmentId++}`,
-                date: session.date,
-                startTime: session.startTime,
-                endTime: session.endTime,
-                location: slotInfo.location,
-                teacher: `!!人员不足-${slotInfo.location}`,
-                assignedBy: 'auto'
-              });
-            }
-          }
-        });
-      }
     });
   });
 
@@ -410,14 +292,12 @@ function getAvailableTeachers(
       }
     }
 
-    // Check time conflicts with other assignments on the same day
+    // Check if teacher is already assigned to ANY location at this time (one location per time slot rule)
     const hasTimeConflict = assignments.some(existing => 
       existing.teacher === teacher.name &&
       existing.date === session.date &&
-      timeOverlap(
-        existing.startTime, existing.endTime,
-        session.startTime, session.endTime
-      )
+      existing.startTime === session.startTime &&
+      existing.endTime === session.endTime
     );
 
     return !hasTimeConflict;
@@ -432,17 +312,14 @@ function validateAssignments(
 ): { isValid: boolean; issues: string[] } {
   const issues: string[] = [];
   
-  // Check for time conflicts (excluding joint supervision)
+  // Check for time conflicts - one teacher cannot be in multiple locations at the same time
   const teacherSchedules = new Map<string, Assignment[]>();
   assignments.forEach(assignment => {
     if (!assignment.teacher.startsWith('!!')) {
-      // Extract base teacher name (remove joint supervision marker)
-      const baseTeacherName = assignment.teacher.replace(' (联排)', '');
-      
-      if (!teacherSchedules.has(baseTeacherName)) {
-        teacherSchedules.set(baseTeacherName, []);
+      if (!teacherSchedules.has(assignment.teacher)) {
+        teacherSchedules.set(assignment.teacher, []);
       }
-      teacherSchedules.get(baseTeacherName)!.push(assignment);
+      teacherSchedules.get(assignment.teacher)!.push(assignment);
     }
   });
 
@@ -457,18 +334,18 @@ function validateAssignments(
       const current = schedule[i];
       const next = schedule[i + 1];
       
-      // Skip if both are joint supervision at the same time (this is allowed)
+      // Check for exact time overlap (same time slot, different locations)
       if (current.date === next.date && 
           current.startTime === next.startTime &&
           current.endTime === next.endTime &&
-          current.teacher.includes('(联排)') &&
-          next.teacher.includes('(联排)')) {
-        continue;
+          current.location !== next.location) {
+        issues.push(`${teacher} 在 ${current.date} ${current.startTime}-${current.endTime} 被分配到多个考场: ${current.location} 和 ${next.location}`);
       }
       
+      // Check for general time overlap
       if (current.date === next.date && 
           timeOverlap(current.startTime, current.endTime, next.startTime, next.endTime)) {
-        issues.push(`${teacher} 在 ${current.date} 有时间冲突`);
+        issues.push(`${teacher} 在 ${current.date} 有时间冲突: ${current.startTime}-${current.endTime} (${current.location}) 和 ${next.startTime}-${next.endTime} (${next.location})`);
       }
     }
   });

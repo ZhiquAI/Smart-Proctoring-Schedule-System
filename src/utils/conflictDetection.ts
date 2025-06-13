@@ -15,11 +15,10 @@ export const detectConflicts = (
   // 检测分配错误（人员不足等系统错误）
   assignments.forEach(assignment => {
     if (assignment.teacher.startsWith('!!')) {
-      const severity = assignment.teacher.includes('冲突') ? 'high' : 'medium';
       conflicts.push({
         type: 'allocation',
         description: `${assignment.teacher} (考场: ${assignment.location}, 时间: ${assignment.date} ${assignment.startTime})`,
-        severity: severity as 'high' | 'medium'
+        severity: 'high'
       });
     }
   });
@@ -28,17 +27,14 @@ export const detectConflicts = (
   const teacherSchedules = new Map<string, Assignment[]>();
   assignments.forEach(assignment => {
     if (!assignment.teacher.startsWith('!!')) {
-      // 处理联排情况，提取基础教师姓名
-      const baseTeacherName = assignment.teacher.replace(' (联排)', '');
-      
-      if (!teacherSchedules.has(baseTeacherName)) {
-        teacherSchedules.set(baseTeacherName, []);
+      if (!teacherSchedules.has(assignment.teacher)) {
+        teacherSchedules.set(assignment.teacher, []);
       }
-      teacherSchedules.get(baseTeacherName)!.push(assignment);
+      teacherSchedules.get(assignment.teacher)!.push(assignment);
     }
   });
 
-  // 检测严重的时间冲突（同一时间段的不同地点，且非联排）
+  // 检测时间冲突
   teacherSchedules.forEach((schedule, teacher) => {
     schedule.sort((a, b) => new Date(`${a.date} ${a.startTime}`).getTime() - new Date(`${b.date} ${b.startTime}`).getTime());
     
@@ -46,19 +42,19 @@ export const detectConflicts = (
       const current = schedule[i];
       const next = schedule[i + 1];
       
-      // 检查是否为同一时间段的联排监考
-      const isSameTimeSlot = current.date === next.date && 
-                            current.startTime === next.startTime &&
-                            current.endTime === next.endTime;
-      
-      const isJointSupervision = current.teacher.includes('(联排)') || next.teacher.includes('(联排)');
-      
-      // 如果是同一时间段的联排，这是允许的
-      if (isSameTimeSlot && isJointSupervision) {
-        continue;
+      // 检查同一时间段是否被分配到多个考场
+      if (current.date === next.date && 
+          current.startTime === next.startTime &&
+          current.endTime === next.endTime &&
+          current.location !== next.location) {
+        conflicts.push({
+          type: 'time',
+          description: `${teacher} 在 ${current.date} ${current.startTime}-${current.endTime} 被分配到多个考场: ${current.location} 和 ${next.location}`,
+          severity: 'high'
+        });
       }
       
-      // 检查真正的时间冲突
+      // 检查时间重叠冲突
       if (current.date === next.date) {
         const currentEnd = new Date(`${current.date} ${current.endTime}`);
         const nextStart = new Date(`${next.date} ${next.startTime}`);
@@ -75,7 +71,7 @@ export const detectConflicts = (
 
     // 工作量均衡性检查（仅作为低优先级提示）
     const teacherWorkload = teacherStats.get(teacher);
-    if (teacherWorkload && teacherWorkload.totalDuration > workloadThreshold) {
+    if (teacherWorkload && teacherWorkload.totalDuration > workloadThreshold && avgWorkload > 0) {
       const overloadPercentage = Math.round(((teacherWorkload.totalDuration - avgWorkload) / avgWorkload) * 100);
       
       conflicts.push({
@@ -119,38 +115,26 @@ function calculateTeacherWorkload(assignments: Assignment[], teachers: Teacher[]
   const stats = new Map<string, {
     assignmentCount: number;
     totalDuration: number;
-    jointSupervisionCount: number;
   }>();
 
   // 初始化所有教师的统计
   teachers.forEach(teacher => {
     stats.set(teacher.name, {
       assignmentCount: 0,
-      totalDuration: 0,
-      jointSupervisionCount: 0
+      totalDuration: 0
     });
   });
 
   // 统计实际分配
   assignments.forEach(assignment => {
     if (!assignment.teacher.startsWith('!!')) {
-      const baseTeacherName = assignment.teacher.replace(' (联排)', '');
-      const isJointSupervision = assignment.teacher.includes('(联排)');
-      
-      const teacherStat = stats.get(baseTeacherName);
+      const teacherStat = stats.get(assignment.teacher);
       if (teacherStat) {
         teacherStat.assignmentCount++;
         
         // 计算时长（分钟）
         const duration = calculateDuration(assignment.startTime, assignment.endTime);
-        
-        // 联排监考按0.75倍计算工作量（因为可以同时监管多个考场）
-        const adjustedDuration = isJointSupervision ? duration * 0.75 : duration;
-        teacherStat.totalDuration += adjustedDuration;
-        
-        if (isJointSupervision) {
-          teacherStat.jointSupervisionCount++;
-        }
+        teacherStat.totalDuration += duration;
       }
     }
   });

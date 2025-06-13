@@ -39,24 +39,14 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
   const stats = useMemo(() => {
     return teachers.map(teacher => {
       const name = teacher.name;
-      const currentAssignments = assignments.filter(a => 
-        a.teacher === name || a.teacher === `${name} (联排)`
-      );
+      const currentAssignments = assignments.filter(a => a.teacher === name);
       
       const current = currentAssignments.reduce((acc, a) => {
         acc.count++;
         const duration = calculateDuration(a.startTime, a.endTime);
-        
-        // 联排监考按0.75倍计算工作量
-        const adjustedDuration = a.teacher.includes('(联排)') ? duration * 0.75 : duration;
-        acc.duration += adjustedDuration;
-        
-        if (a.teacher.includes('(联排)')) {
-          acc.jointCount++;
-        }
-        
+        acc.duration += duration;
         return acc;
-      }, { count: 0, duration: 0, jointCount: 0 });
+      }, { count: 0, duration: 0 });
 
       const historical = historicalStats[name] || { count: 0, duration: 0 };
       const total = {
@@ -66,13 +56,10 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
 
       return {
         name,
-        current: {
-          ...current,
-          jointCount: current.jointCount
-        },
+        current,
         total,
         department: teacher.department
-      } as TeacherStats & { current: { count: number; duration: number; jointCount: number } };
+      } as TeacherStats;
     }).sort((a, b) => b.total.duration - a.total.duration);
   }, [assignments, teachers, historicalStats]);
 
@@ -160,7 +147,7 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
           </div>
         </div>
         <div className="mt-2 text-xs text-gray-600">
-          💡 系统支持工作量动态均衡，短期不均衡可通过长期调整实现公平
+          💡 一个时间段只能监考一个考场，通过长期统计实现工作量均衡
         </div>
       </div>
 
@@ -224,14 +211,7 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({
               <div className="space-y-2 text-gray-600">
                 <div className="bg-blue-100/50 px-2 py-1 rounded flex justify-between">
                   <span><strong>本次:</strong></span>
-                  <span>
-                    {stat.current.count} 次
-                    {stat.current.jointCount > 0 && (
-                      <span className="text-orange-600 ml-1" title="联排监考次数">
-                        (含{stat.current.jointCount}次联排)
-                      </span>
-                    )}
-                  </span>
+                  <span>{stat.current.count} 次</span>
                 </div>
                 <div className="bg-blue-100/50 px-2 py-1 rounded flex justify-between">
                   <span><strong>时长:</strong></span>
