@@ -24,7 +24,7 @@ function convertExclusionsToMap(exclusionsArray: [string, string[]][]): Map<stri
   return map;
 }
 
-// Simple scheduling algorithm implementation
+// Improved scheduling algorithm implementation
 function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
   const { teachers, schedules, sessions, specialTasks, teacherExclusions: exclusionsArray, historicalStats } = params;
   const teacherExclusions = convertExclusionsToMap(exclusionsArray);
@@ -38,11 +38,14 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     payload: { progress: 10, message: '正在分析教师可用性...' }
   });
 
+  // Track assigned slots to avoid duplicates
+  const assignedSlots = new Set<string>();
+
   // Process forced assignments first
-  const forcedAssignments = new Set<string>();
   specialTasks.forced.forEach(forced => {
     const session = sessions.find(s => s.id === forced.sessionId);
     if (session) {
+      const slotKey = `${forced.sessionId}_${forced.location}`;
       assignments.push({
         id: `assignment_${assignmentId++}`,
         date: session.date,
@@ -52,7 +55,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
         teacher: forced.teacher,
         assignedBy: 'forced'
       });
-      forcedAssignments.add(`${forced.sessionId}_${forced.location}`);
+      assignedSlots.add(slotKey);
     }
   });
 
@@ -62,12 +65,11 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
   });
 
   // Process designated assignments
-  const designatedAssignments = new Set<string>();
   specialTasks.designated.forEach(designated => {
     const session = sessions.find(s => s.id === designated.slotId);
     if (session) {
-      const key = `${designated.slotId}_${designated.location}`;
-      if (!forcedAssignments.has(key)) {
+      const slotKey = `${designated.slotId}_${designated.location}`;
+      if (!assignedSlots.has(slotKey)) {
         assignments.push({
           id: `assignment_${assignmentId++}`,
           date: designated.date,
@@ -77,7 +79,7 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
           teacher: designated.teacher,
           assignedBy: 'designated'
         });
-        designatedAssignments.add(key);
+        assignedSlots.add(slotKey);
       }
     }
   });
@@ -94,94 +96,114 @@ function generateSchedulingAssignments(params: SchedulingParams): Assignment[] {
     teacherWorkload.set(teacher.name, historical.duration);
   });
 
-  // Process remaining slots
-  const processedSlots = new Set<string>();
-  let totalSlots = 0;
+  // Count total required assignments
+  let totalRequired = 0;
   let processedCount = 0;
 
-  // Count total slots
   sessions.forEach(session => {
     session.slots.forEach(slot => {
-      totalSlots += slot.required;
+      totalRequired += slot.required;
     });
   });
 
+  // Process all remaining slots that need assignments
   sessions.forEach(session => {
     session.slots.forEach(slot => {
-      for (let i = 0; i < slot.required; i++) {
-        const slotKey = `${session.id}_${slot.location}_${i}`;
-        const assignmentKey = `${session.id}_${slot.location}`;
-        
-        if (!forcedAssignments.has(assignmentKey) && !designatedAssignments.has(assignmentKey)) {
-          // Find available teacher
-          const availableTeachers = teachers.filter(teacher => {
-            // Check exclusions
-            const exclusions = teacherExclusions.get(teacher.name);
-            if (exclusions) {
-              if (exclusions.has(`${session.id}_all`) || exclusions.has(`${session.id}_${slot.location}`)) {
-                return false;
-              }
+      const slotKey = `${session.id}_${slot.location}`;
+      
+      // Check how many teachers are already assigned to this slot
+      const existingAssignments = assignments.filter(a => 
+        a.date === session.date &&
+        a.startTime === session.startTime &&
+        a.endTime === session.endTime &&
+        a.location === slot.location
+      ).length;
+
+      // Assign remaining teachers needed for this slot
+      const remainingNeeded = slot.required - existingAssignments;
+      
+      for (let i = 0; i < remainingNeeded; i++) {
+        // Find available teacher
+        const availableTeachers = teachers.filter(teacher => {
+          // Check if teacher is already assigned to this exact slot
+          const alreadyAssignedToSlot = assignments.some(a =>
+            a.teacher === teacher.name &&
+            a.date === session.date &&
+            a.startTime === session.startTime &&
+            a.endTime === session.endTime &&
+            a.location === slot.location
+          );
+
+          if (alreadyAssignedToSlot) {
+            return false;
+          }
+
+          // Check exclusions
+          const exclusions = teacherExclusions.get(teacher.name);
+          if (exclusions) {
+            if (exclusions.has(`${session.id}_all`) || exclusions.has(`${session.id}_${slot.location}`)) {
+              return false;
             }
+          }
 
-            // Check time conflicts
-            const hasConflict = assignments.some(existing => 
-              existing.teacher === teacher.name &&
-              existing.date === session.date &&
-              timeOverlap(
-                existing.startTime, existing.endTime,
-                session.startTime, session.endTime
-              )
-            );
+          // Check time conflicts with other assignments
+          const hasTimeConflict = assignments.some(existing => 
+            existing.teacher === teacher.name &&
+            existing.date === session.date &&
+            timeOverlap(
+              existing.startTime, existing.endTime,
+              session.startTime, session.endTime
+            )
+          );
 
-            return !hasConflict;
+          return !hasTimeConflict;
+        });
+
+        if (availableTeachers.length > 0) {
+          // Sort by workload (ascending) to balance load
+          availableTeachers.sort((a, b) => 
+            (teacherWorkload.get(a.name) || 0) - (teacherWorkload.get(b.name) || 0)
+          );
+
+          const selectedTeacher = availableTeachers[0];
+          
+          assignments.push({
+            id: `assignment_${assignmentId++}`,
+            date: session.date,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            location: slot.location,
+            teacher: selectedTeacher.name,
+            assignedBy: 'auto'
           });
 
-          if (availableTeachers.length > 0) {
-            // Sort by workload (ascending) to balance load
-            availableTeachers.sort((a, b) => 
-              (teacherWorkload.get(a.name) || 0) - (teacherWorkload.get(b.name) || 0)
-            );
-
-            const selectedTeacher = availableTeachers[0];
-            
-            assignments.push({
-              id: `assignment_${assignmentId++}`,
-              date: session.date,
-              startTime: session.startTime,
-              endTime: session.endTime,
-              location: slot.location,
-              teacher: selectedTeacher.name,
-              assignedBy: 'auto'
-            });
-
-            // Update workload
-            const duration = calculateDuration(session.startTime, session.endTime);
-            teacherWorkload.set(selectedTeacher.name, 
-              (teacherWorkload.get(selectedTeacher.name) || 0) + duration
-            );
-          } else {
-            // No available teacher - create error assignment
-            assignments.push({
-              id: `assignment_${assignmentId++}`,
-              date: session.date,
-              startTime: session.startTime,
-              endTime: session.endTime,
-              location: slot.location,
-              teacher: `!!无可用教师 (${slot.location})`,
-              assignedBy: 'auto'
-            });
-          }
+          // Update workload
+          const duration = calculateDuration(session.startTime, session.endTime);
+          teacherWorkload.set(selectedTeacher.name, 
+            (teacherWorkload.get(selectedTeacher.name) || 0) + duration
+          );
+        } else {
+          // No available teacher - create error assignment
+          assignments.push({
+            id: `assignment_${assignmentId++}`,
+            date: session.date,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            location: slot.location,
+            teacher: `!!无可用教师-${slot.location}`,
+            assignedBy: 'auto'
+          });
         }
 
         processedCount++;
-        const progress = 50 + (processedCount / totalSlots) * 40;
+        const progress = 50 + (processedCount / totalRequired) * 40;
         
-        if (processedCount % 5 === 0) {
+        if (processedCount % 3 === 0 || processedCount === totalRequired) {
           self.postMessage({
             type: 'PROGRESS',
             payload: { 
               progress: Math.round(progress), 
-              message: `正在分配第 ${processedCount}/${totalSlots} 个监考任务...` 
+              message: `正在分配监考任务 ${processedCount}/${totalRequired}...` 
             }
           });
         }

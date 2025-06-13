@@ -89,21 +89,8 @@ const ScheduleTable: React.FC<ScheduleTableProps> = ({
     [assignments]
   );
 
-  // Sort locations numerically for better order
-  const sortedLocations = useMemo(() => {
-    return pivotData.locations.sort((a, b) => {
-      const numA = parseInt(a) || 0;
-      const numB = parseInt(b) || 0;
-      
-      // If both are numbers, sort numerically
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return numA - numB;
-      }
-      
-      // Otherwise, sort alphabetically
-      return a.localeCompare(b, 'zh-CN', { numeric: true });
-    });
-  }, [pivotData.locations]);
+  // Locations are now properly sorted in transformAssignmentsToPivot
+  const sortedLocations = pivotData.locations;
 
   const groupedByDate = useMemo(() => {
     return pivotData.timeSlots.reduce((acc, slot) => {

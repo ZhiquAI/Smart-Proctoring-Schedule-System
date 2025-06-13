@@ -11,6 +11,45 @@ export interface PivotData {
   locations: string[];
 }
 
+// Improved location sorting function
+function sortLocations(locations: string[]): string[] {
+  return locations.sort((a, b) => {
+    // Extract numeric and alphabetic parts
+    const parseLocation = (loc: string) => {
+      const match = loc.match(/^([A-Za-z]*)(\d+)([A-Za-z]*)$/);
+      if (match) {
+        return {
+          prefix: match[1] || '',
+          number: parseInt(match[2]) || 0,
+          suffix: match[3] || ''
+        };
+      }
+      // If no number found, treat as pure string
+      return {
+        prefix: loc,
+        number: 0,
+        suffix: ''
+      };
+    };
+
+    const locA = parseLocation(a);
+    const locB = parseLocation(b);
+
+    // First compare by prefix (A, B, C, etc.)
+    if (locA.prefix !== locB.prefix) {
+      return locA.prefix.localeCompare(locB.prefix);
+    }
+
+    // Then compare by number (101, 102, 103, etc.)
+    if (locA.number !== locB.number) {
+      return locA.number - locB.number;
+    }
+
+    // Finally compare by suffix
+    return locA.suffix.localeCompare(locB.suffix);
+  });
+}
+
 export const transformAssignmentsToPivot = (assignments: Assignment[]): PivotData => {
   const timeSlotMap = new Map<string, {
     date: string;
@@ -47,7 +86,8 @@ export const transformAssignmentsToPivot = (assignments: Assignment[]): PivotDat
     new Date(`${a.date} ${a.startTime}`).getTime() - new Date(`${b.date} ${b.startTime}`).getTime()
   );
 
-  const locations = Array.from(locationSet).sort((a, b) => a.localeCompare(b));
+  // Use improved sorting for locations
+  const locations = sortLocations(Array.from(locationSet));
 
   return { timeSlots, locations };
 };
