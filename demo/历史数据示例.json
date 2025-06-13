@@ -1,0 +1,122 @@
+{
+  "张教授": {
+    "count": 12,
+    "duration": 1440
+  },
+  "李副教授": {
+    "count": 10,
+    "duration": 1200
+  },
+  "王老师": {
+    "count": 8,
+    "duration": 960
+  },
+  "陈教授": {
+    "count": 15,
+    "duration": 1800
+  },
+  "刘副教授": {
+    "count": 9,
+    "duration": 1080
+  },
+  "杨老师": {
+    "count": 7,
+    "duration": 840
+  },
+  "赵教授": {
+    "count": 11,
+    "duration": 1320
+  },
+  "孙副教授": {
+    "count": 6,
+    "duration": 720
+  },
+  "周老师": {
+    "count": 13,
+    "duration": 1560
+  },
+  "吴教授": {
+    "count": 8,
+    "duration": 960
+  },
+  "郑副教授": {
+    "count": 10,
+    "duration": 1200
+  },
+  "王副教授": {
+    "count": 9,
+    "duration": 1080
+  },
+  "冯老师": {
+    "count": 5,
+    "duration": 600
+  },
+  "陈副教授": {
+    "count": 14,
+    "duration": 1680
+  },
+  "褚老师": {
+    "count": 7,
+    "duration": 840
+  },
+  "卫教授": {
+    "count": 12,
+    "duration": 1440
+  },
+  "蒋副教授": {
+    "count": 8,
+    "duration": 960
+  },
+  "沈老师": {
+    "count": 6,
+    "duration": 720
+  },
+  "韩教授": {
+    "count": 11,
+    "duration": 1320
+  },
+  "杨副教授": {
+    "count": 9,
+    "duration": 1080
+  },
+  "朱老师": {
+    "count": 4,
+    "duration": 480
+  },
+  "秦教授": {
+    "count": 13,
+    "duration": 1560
+  },
+  "尤副教授": {
+    "count": 7,
+    "duration": 840
+  },
+  "许老师": {
+    "count": 10,
+    "duration": 1200
+  },
+  "何教授": {
+    "count": 8,
+    "duration": 960
+  },
+  "吕副教授": {
+    "count": 6,
+    "duration": 720
+  },
+  "施老师": {
+    "count": 9,
+    "duration": 1080
+  },
+  "张副教授": {
+    "count": 11,
+    "duration": 1320
+  },
+  "孔老师": {
+    "count": 5,
+    "duration": 600
+  },
+  "曹教授": {
+    "count": 12,
+    "duration": 1440
+  }
+}
