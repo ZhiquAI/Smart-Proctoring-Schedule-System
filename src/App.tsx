@@ -231,11 +231,11 @@ function App() {
           </div>
         )}
 
-        {/* Main Content - Adjusted grid layout for wider center panel */}
+        {/* Main Content - Adjusted grid layout */}
         <div className="grid grid-cols-12 gap-8">
-          {/* Left Panel - Settings - Reduced width */}
-          <div className="col-span-12 lg:col-span-2 flex flex-col h-[80vh]">
-            {/* File Upload Card - Compact */}
+          {/* Left Panel - Settings */}
+          <div className="col-span-12 lg:col-span-3 flex flex-col h-[80vh]">
+            {/* File Upload Card */}
             <Card 
               title={
                 <div className="flex items-center gap-2">
@@ -253,7 +253,7 @@ function App() {
               </div>
             </Card>
 
-            {/* Rules Configuration Card - Flexible Height */}
+            {/* Rules Configuration Card */}
             <Card 
               title={
                 <div className="flex items-center gap-2">
@@ -278,18 +278,9 @@ function App() {
               </div>
             </Card>
 
-            {/* Action Buttons - Fixed at Bottom - Horizontal Layout */}
+            {/* Action Buttons - Redesigned Layout */}
             <div className="space-y-3">
-              {/* AI Assistant Button */}
-              <button
-                onClick={() => setShowAIChat(true)}
-                className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>AI 智能助手</span>
-              </button>
-
-              {/* Primary Action Button */}
+              {/* Primary Action - Generate Assignments */}
               <button
                 onClick={handleGenerateAssignments}
                 disabled={!canGenerate || isLoading}
@@ -300,21 +291,31 @@ function App() {
                 <span>{isLoading ? '分配中...' : '开始智能分配'}</span>
               </button>
 
-              {/* Secondary Actions - Horizontal Layout */}
-              <div className="grid grid-cols-1 gap-2">
+              {/* Secondary Actions Row */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* AI Assistant Button */}
+                <button
+                  onClick={() => setShowAIChat(true)}
+                  className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg hover:shadow-xl"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>AI 助手</span>
+                </button>
+
+                {/* Reset Button */}
                 <button
                   onClick={() => setShowResetModal(true)}
-                  className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  <span>重置所有数据</span>
+                  <span>重置</span>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Center Panel - Schedule Preview - Expanded width */}
-          <div className="col-span-12 lg:col-span-8">
+          {/* Center Panel - Schedule Preview */}
+          <div className="col-span-12 lg:col-span-6">
             <Card 
               title={
                 <div className="flex items-center justify-between w-full">
@@ -370,8 +371,8 @@ function App() {
             </Card>
           </div>
 
-          {/* Right Panel - Statistics - Reduced width */}
-          <div className="col-span-12 lg:col-span-2">
+          {/* Right Panel - Statistics */}
+          <div className="col-span-12 lg:col-span-3">
             <Card 
               title={
                 <div className="flex items-center gap-2">
